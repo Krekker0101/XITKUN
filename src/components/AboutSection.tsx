@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { ReactElement, useEffect, useMemo, useRef } from "react";
 import packageJson from "../../package.json";
 import {
   Bug,
@@ -21,17 +21,23 @@ import { useResolvedTheme } from "../hooks/useResolvedTheme";
 import { getPlatformShortcut } from "../utils/platformUtils";
 
 interface LinkCard {
-  icon: React.ReactNode;
+  icon: ReactElement;
   title: string;
   description: string;
   href: string;
   actionLabel: string;
 }
 
+interface CreatorLink {
+  href: string;
+  title: string;
+  icon: ReactElement;
+}
+
 export const AboutSection: React.FC = () => {
   const isLight = useResolvedTheme() === "light";
   const donationClickTimeRef = useRef<number | null>(null);
-  const screenshotShortcut = getPlatformShortcut(["⌘", "⇧", "Enter"]).join("+");
+  const screenshotShortcut = getPlatformShortcut(["Cmd", "Shift", "Enter"]).join("+");
 
   useEffect(() => {
     if (!hasConfiguredLink(BRAND.supportUrl)) {
@@ -68,100 +74,117 @@ export const AboutSection: React.FC = () => {
     }
   };
 
-  const creatorLinks = useMemo(
-    () =>
-      [
-        hasConfiguredLink(BRAND.repositoryUrl)
-          ? {
-              href: BRAND.repositoryUrl,
-              title: "GitHub",
-              icon: <Github size={18} />,
-            }
-          : null,
-        hasConfiguredLink(BRAND.linkedinUrl)
-          ? {
-              href: BRAND.linkedinUrl,
-              title: "LinkedIn",
-              icon: <Linkedin size={18} />,
-            }
-          : null,
-        hasConfiguredLink(BRAND.xUrl)
-          ? {
-              href: BRAND.xUrl,
-              title: "X",
-              icon: <Star size={18} />,
-            }
-          : null,
-        hasConfiguredLink(BRAND.instagramUrl)
-          ? {
-              href: BRAND.instagramUrl,
-              title: "Instagram",
-              icon: <Instagram size={18} />,
-            }
-          : null,
-      ].filter(
-        (
-          link
-        ): link is {
-          href: string;
-          title: string;
-          icon: React.ReactNode;
-        } => Boolean(link)
-      ),
-    []
-  );
+  const creatorLinks = useMemo<CreatorLink[]>(() => {
+    const links: CreatorLink[] = [];
 
-  const projectCards = useMemo(
-    () =>
-      [
-        hasConfiguredLink(BRAND.repositoryUrl)
-          ? {
-              href: BRAND.repositoryUrl,
-              icon: <Github size={18} />,
-              title: "Project Repository",
-              description: "Browse the codebase, release history, and packaging metadata.",
-              actionLabel: "Open repository",
-            }
-          : null,
-        hasConfiguredLink(BRAND.issuesUrl)
-          ? {
-              href: BRAND.issuesUrl,
-              icon: <Bug size={18} />,
-              title: "Issue Tracking",
-              description: "Capture bugs, polish requests, and release follow-ups in one place.",
-              actionLabel: "View issues",
-            }
-          : null,
-        hasConfiguredLink(BRAND.websiteUrl)
-          ? {
-              href: BRAND.websiteUrl,
-              icon: <Globe size={18} />,
-              title: "Website",
-              description: "Public landing page for product updates and distribution.",
-              actionLabel: "Visit site",
-            }
-          : null,
-        hasConfiguredLink(BRAND.supportUrl)
-          ? {
-              href: BRAND.supportUrl,
-              icon: <Heart size={18} />,
-              title: "Support Development",
-              description: "Optional support channel for sustaining independent work.",
-              actionLabel: "Support project",
-            }
-          : null,
-        hasConfiguredLink(getBrandContactHref())
-          ? {
-              href: getBrandContactHref(),
-              icon: <Mail size={18} />,
-              title: "Contact",
-              description: "Direct channel for collaboration, consulting, and product inquiries.",
-              actionLabel: "Send email",
-            }
-          : null,
-      ].filter((card): card is LinkCard => Boolean(card)),
-    []
-  );
+    if (hasConfiguredLink(BRAND.websiteUrl)) {
+      links.push({
+        href: BRAND.websiteUrl,
+        title: "Portfolio",
+        icon: <Globe size={18} />,
+      });
+    } else if (hasConfiguredLink(BRAND.repositoryUrl)) {
+      links.push({
+        href: BRAND.repositoryUrl,
+        title: "GitHub",
+        icon: <Github size={18} />,
+      });
+    }
+
+    if (hasConfiguredLink(BRAND.linkedinUrl)) {
+      links.push({
+        href: BRAND.linkedinUrl,
+        title: "LinkedIn",
+        icon: <Linkedin size={18} />,
+      });
+    }
+
+    if (hasConfiguredLink(BRAND.xUrl)) {
+      links.push({
+        href: BRAND.xUrl,
+        title: "X",
+        icon: <Star size={18} />,
+      });
+    }
+
+    if (hasConfiguredLink(BRAND.instagramUrl)) {
+      links.push({
+        href: BRAND.instagramUrl,
+        title: "Instagram",
+        icon: <Instagram size={18} />,
+      });
+    }
+
+    return links;
+  }, []);
+
+  const projectCards = useMemo<LinkCard[]>(() => {
+    const cards: LinkCard[] = [];
+    const contactHref = getBrandContactHref();
+
+    if (hasConfiguredLink(BRAND.websiteUrl)) {
+      cards.push({
+        href: BRAND.websiteUrl,
+        icon: <Globe size={18} />,
+        title: "Portfolio",
+        description: "Personal portfolio, project presentation, and primary contact point.",
+        actionLabel: "Visit portfolio",
+      });
+    } else if (hasConfiguredLink(BRAND.repositoryUrl)) {
+      cards.push({
+        href: BRAND.repositoryUrl,
+        icon: <Github size={18} />,
+        title: "Project Repository",
+        description: "Browse the codebase, release history, and packaging metadata.",
+        actionLabel: "Open repository",
+      });
+    }
+
+    if (!hasConfiguredLink(BRAND.websiteUrl) && hasConfiguredLink(BRAND.issuesUrl)) {
+      cards.push({
+        href: BRAND.issuesUrl,
+        icon: <Bug size={18} />,
+        title: "Issue Tracking",
+        description: "Capture bugs, polish requests, and release follow-ups in one place.",
+        actionLabel: "View issues",
+      });
+    }
+
+    if (
+      hasConfiguredLink(BRAND.websiteUrl) &&
+      (!hasConfiguredLink(BRAND.repositoryUrl) || BRAND.websiteUrl !== BRAND.repositoryUrl)
+    ) {
+      cards.push({
+        href: BRAND.websiteUrl,
+        icon: <Globe size={18} />,
+        title: "Website",
+        description: "Public landing page for product updates and distribution.",
+        actionLabel: "Visit site",
+      });
+    }
+
+    if (hasConfiguredLink(BRAND.supportUrl)) {
+      cards.push({
+        href: BRAND.supportUrl,
+        icon: <Heart size={18} />,
+        title: "Support Development",
+        description: "Optional support channel for sustaining independent work.",
+        actionLabel: "Support project",
+      });
+    }
+
+    if (hasConfiguredLink(contactHref)) {
+      cards.push({
+        href: contactHref,
+        icon: <Mail size={18} />,
+        title: "Contact",
+        description: "Direct channel for collaboration, consulting, and product inquiries.",
+        actionLabel: "Send email",
+      });
+    }
+
+    return cards;
+  }, []);
 
   return (
     <div className="space-y-6 animated fadeIn pb-10">

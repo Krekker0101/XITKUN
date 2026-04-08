@@ -1,17 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, AlertCircle, CheckCircle, Save, ChevronDown, Check, RefreshCw, ExternalLink, Loader2 } from 'lucide-react';
-import { STANDARD_CLOUD_MODELS, prettifyModelId } from '../../utils/modelUtils';
-import { validateCurl } from '../../lib/curl-validator';
-import { ProviderCard } from './ProviderCard';
-
-interface CustomProvider {
-    id: string;
-    name: string;
-    curlCommand: string;
-    responsePath: string;
-}
-
-type CloudProvider = 'gemini' | 'groq' | 'openai' | 'claude';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+    AlertCircle,
+    Check,
+    CheckCircle,
+    ChevronDown,
+    ExternalLink,
+    Loader2,
+    PencilLine,
+    Plus,
+    RefreshCw,
+    Save,
+    Trash2,
+} from 'lucide-react';
+import {
+    AIServiceDraft,
+    AIServiceSummary,
+    AIServiceType,
+    AI_SERVICE_PRESETS,
+    getAIServiceModelId,
+    getAIServicePreset,
+    getAIServiceTypeLabel,
+    prettifyModelId,
+} from '../../lib/aiServiceCatalog';
 
 interface ModelOption {
     id: string;
@@ -25,13 +35,13 @@ interface ModelSelectProps {
     placeholder?: string;
 }
 
-const ModelSelect: React.FC<ModelSelectProps> = ({ value, options, onChange, placeholder = "Select model" }) => {
+const ModelSelect: React.FC<ModelSelectProps> = ({ value, options, onChange, placeholder = 'Select model' }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const containerRef = React.useRef<HTMLDivElement>(null);
+    const ref = React.useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+            if (ref.current && !ref.current.contains(event.target as Node)) {
                 setIsOpen(false);
             }
         };
@@ -39,39 +49,37 @@ const ModelSelect: React.FC<ModelSelectProps> = ({ value, options, onChange, pla
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const selectedOption = options.find(o => o.id === value);
+    const selected = options.find((option) => option.id === value);
 
     return (
-        <div className="relative" ref={containerRef}>
+        <div className="relative" ref={ref}>
             <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="w-40 bg-bg-input border border-border-subtle rounded-lg px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary flex items-center justify-between hover:bg-bg-elevated transition-colors"
                 type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full bg-bg-input border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-accent-primary flex items-center justify-between hover:bg-bg-elevated transition-colors"
             >
-                <span className="truncate pr-2">{selectedOption ? selectedOption.name : placeholder}</span>
+                <span className="truncate pr-2">{selected ? selected.name : placeholder}</span>
                 <ChevronDown size={14} className={`text-text-secondary transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isOpen && (
-                <div className="absolute top-full right-0 mt-1 w-full bg-bg-elevated border border-border-subtle rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto animated fadeIn">
+                <div className="absolute top-full left-0 mt-1 w-full bg-bg-elevated border border-border-subtle rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto animated fadeIn">
                     <div className="p-1 space-y-0.5">
                         {options.map((option) => (
                             <button
                                 key={option.id}
+                                type="button"
                                 onClick={() => {
                                     onChange(option.id);
                                     setIsOpen(false);
                                 }}
-                                className={`w-full text-left px-3 py-2 text-xs rounded-md flex items-center justify-between group transition-colors ${value === option.id ? 'bg-bg-input hover:bg-bg-elevated text-text-primary' : 'text-text-secondary hover:bg-bg-input hover:text-text-primary'}`}
-                                type="button"
+                                className={`w-full text-left px-3 py-2 text-xs rounded-md flex items-center justify-between transition-colors ${value === option.id ? 'bg-bg-input text-text-primary' : 'text-text-secondary hover:bg-bg-input hover:text-text-primary'}`}
                             >
                                 <span className="truncate">{option.name}</span>
                                 {value === option.id && <Check size={14} className="text-accent-primary shrink-0 ml-2" />}
                             </button>
                         ))}
-                        {options.length === 0 && (
-                            <div className="px-3 py-2 text-xs text-gray-500 italic">No models available</div>
-                        )}
+                        {options.length === 0 && <div className="px-3 py-2 text-xs text-text-tertiary italic">No models loaded yet</div>}
                     </div>
                 </div>
             )}
@@ -79,745 +87,409 @@ const ModelSelect: React.FC<ModelSelectProps> = ({ value, options, onChange, pla
     );
 };
 
+const createDraft = (serviceType: AIServiceType = 'openrouter'): AIServiceDraft => {
+    const preset = getAIServicePreset(serviceType);
+    return {
+        name: preset.defaultName,
+        serviceType,
+        model: '',
+        apiKey: '',
+        baseUrl: preset.defaultBaseUrl || '',
+    };
+};
+
 export const AIProvidersSettings: React.FC = () => {
-    // --- Standard Providers ---
-    const [apiKey, setApiKey] = useState('');
-    const [groqApiKey, setGroqApiKey] = useState('');
-    const [openaiApiKey, setOpenaiApiKey] = useState('');
-    const [claudeApiKey, setClaudeApiKey] = useState('');
-
-    // Status
-    const [savedStatus, setSavedStatus] = useState<Record<string, boolean>>({});
-    const [savingStatus, setSavingStatus] = useState<Record<string, boolean>>({});
-    const [hasStoredKey, setHasStoredKey] = useState<Record<string, boolean>>({});
-    const [testStatus, setTestStatus] = useState<Record<string, 'idle' | 'testing' | 'success' | 'error'>>({});
-    const [testError, setTestError] = useState<Record<string, string>>({});
-
-    // --- Custom Providers ---
-    const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
-    const [isEditingCustom, setIsEditingCustom] = useState(false);
-    const [editingProvider, setEditingProvider] = useState<CustomProvider | null>(null);
-    const [customName, setCustomName] = useState('');
-    const [customCurl, setCustomCurl] = useState('');
-    const [customResponsePath, setCustomResponsePath] = useState('');
-    const [curlError, setCurlError] = useState<string | null>(null);
-
-    // --- Local (Ollama) ---
+    const [aiServices, setAiServices] = useState<AIServiceSummary[]>([]);
     const [ollamaModels, setOllamaModels] = useState<string[]>([]);
-    const [ollamaStatus, setOllamaStatus] = useState<'checking' | 'detected' | 'not-found' | 'fixing'>('checking');
-    const [ollamaRestarted, setOllamaRestarted] = useState(false);
+    const [defaultModel, setDefaultModel] = useState('');
+    const [isEditing, setIsEditing] = useState(false);
+    const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+    const [draft, setDraft] = useState<AIServiceDraft>(createDraft());
+    const [hasStoredKey, setHasStoredKey] = useState(false);
+    const [serviceModels, setServiceModels] = useState<Array<{ id: string; label: string }>>([]);
+    const [isFetchingModels, setIsFetchingModels] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const [isRefreshingOllama, setIsRefreshingOllama] = useState(false);
+    const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+    const [errorText, setErrorText] = useState('');
 
-    // --- Default Model ---
-    const [defaultModel, setDefaultModel] = useState<string>('gemini-3.1-flash-lite-preview');
-    const [fastResponseMode, setFastResponseMode] = useState(false);
+    const preset = getAIServicePreset(draft.serviceType);
 
-    // --- Dynamic Model Discovery ---
-    const [preferredModels, setPreferredModels] = useState<Record<string, string>>({});
-
-    // Load Initial Data
-    useEffect(() => {
-        const loadCredentials = async () => {
-            try {
-                const fastMode = await window.electronAPI.getGroqFastTextMode();
-                setFastResponseMode(fastMode.enabled);
-
-                const creds = await window.electronAPI.getStoredCredentials();
-                setHasStoredKey({
-                    gemini: creds.hasGeminiKey,
-                    groq: creds.hasGroqKey,
-                    openai: creds.hasOpenaiKey,
-                    claude: creds.hasClaudeKey
-                });
-                // Load preferred models
-                const pm: Record<string, string> = {};
-                if (creds.geminiPreferredModel) pm.gemini = creds.geminiPreferredModel;
-                if (creds.groqPreferredModel) pm.groq = creds.groqPreferredModel;
-                if (creds.openaiPreferredModel) pm.openai = creds.openaiPreferredModel;
-                if (creds.claudePreferredModel) pm.claude = creds.claudePreferredModel;
-                setPreferredModels(pm);
-
-                const custom = await window.electronAPI.getCustomProviders();
-                setCustomProviders(custom);
-
-                // Load persisted default model
-                const result = await window.electronAPI.getDefaultModel();
-                if (result.model) {
-                    setDefaultModel(result.model);
-                }
-
-                // Check Ollama
-                checkOllama();
-
-            } catch (e) {
-                console.error("Failed to load settings:", e);
-            }
-        };
-        loadCredentials();
-
-        // Listen for changes from other windows (2-way sync)
-        const unsubscribe = window.electronAPI.onGroqFastTextChanged((enabled: boolean) => {
-            setFastResponseMode(enabled);
-            localStorage.setItem('natively_groq_fast_text', String(enabled));
+    const defaultOptions = useMemo<ModelOption[]>(() => {
+        const options: ModelOption[] = aiServices.map((service) => ({
+            id: getAIServiceModelId(service.id),
+            name: `${service.name} • ${service.model}`,
+        }));
+        ollamaModels.forEach((model) => {
+            options.push({ id: `ollama-${model}`, name: `${model} (Local)` });
         });
+        if (defaultModel && !options.find((option) => option.id === defaultModel)) {
+            options.unshift({ id: defaultModel, name: prettifyModelId(defaultModel) });
+        }
+        return options;
+    }, [aiServices, defaultModel, ollamaModels]);
+
+    const fetchedModelOptions = useMemo<ModelOption[]>(
+        () => serviceModels.map((model) => ({ id: model.id, name: model.label })),
+        [serviceModels]
+    );
+
+    const loadData = async () => {
+        const [services, storedDefault, detectedOllamaModels] = await Promise.all([
+            window.electronAPI.getAiServices(),
+            window.electronAPI.getDefaultModel(),
+            window.electronAPI.getAvailableOllamaModels().catch(() => [] as string[]),
+        ]);
+        setAiServices(services || []);
+        setDefaultModel(storedDefault.model || '');
+        setOllamaModels(detectedOllamaModels || []);
+    };
+
+    useEffect(() => {
+        void loadData();
+        const unsubscribe = window.electronAPI.onModelChanged((modelId: string) => setDefaultModel(modelId));
         return () => unsubscribe();
     }, []);
 
-    // Effect to enforce fast mode disabled if no Groq key
-    useEffect(() => {
-        if (!hasStoredKey.groq && fastResponseMode) {
-            setFastResponseMode(false);
-            localStorage.setItem('natively_groq_fast_text', 'false');
-            void window.electronAPI.setGroqFastTextMode(false).catch(console.error);
-        }
-    }, [hasStoredKey.groq, fastResponseMode]);
+    const resetEditor = (serviceType: AIServiceType = 'openrouter') => {
+        setIsEditing(false);
+        setEditingServiceId(null);
+        setDraft(createDraft(serviceType));
+        setHasStoredKey(false);
+        setServiceModels([]);
+        setTestStatus('idle');
+        setErrorText('');
+        setIsFetchingModels(false);
+    };
 
-    // Poll for Ollama status every 3 seconds requesting smart start on mount
-    useEffect(() => {
-        // Immediate "Smart Start" check
-        ensureOllamaStartup();
+    const updateDraft = <K extends keyof AIServiceDraft>(key: K, value: AIServiceDraft[K]) => {
+        setDraft((current) => ({ ...current, [key]: value }));
+    };
 
-        // Background polling for maintenance
-        const interval = setInterval(() => {
-            checkOllama(false);
-        }, 3000);
-        return () => clearInterval(interval);
-    }, []);
+    const changeServiceType = (serviceType: AIServiceType) => {
+        const nextPreset = getAIServicePreset(serviceType);
+        setDraft((current) => {
+            const previousPreset = getAIServicePreset(current.serviceType);
+            const replaceName = !current.name.trim() || current.name.trim() === previousPreset.defaultName;
+            const replaceBaseUrl = !current.baseUrl?.trim() || current.baseUrl.trim() === (previousPreset.defaultBaseUrl || '');
+            return {
+                ...current,
+                serviceType,
+                name: replaceName ? nextPreset.defaultName : current.name,
+                baseUrl: replaceBaseUrl ? (nextPreset.defaultBaseUrl || '') : current.baseUrl,
+            };
+        });
+        setServiceModels([]);
+        setTestStatus('idle');
+        setErrorText('');
+    };
 
-    const ensureOllamaStartup = async () => {
-        setOllamaStatus('checking');
+    const beginCreate = () => {
+        setIsEditing(true);
+        setEditingServiceId(null);
+        setDraft(createDraft());
+        setHasStoredKey(false);
+        setServiceModels([]);
+        setTestStatus('idle');
+        setErrorText('');
+    };
+
+    const beginEdit = (service: AIServiceSummary) => {
+        setIsEditing(true);
+        setEditingServiceId(service.id);
+        setDraft({
+            id: service.id,
+            name: service.name,
+            serviceType: service.serviceType,
+            model: service.model,
+            apiKey: '',
+            baseUrl: service.baseUrl || getAIServicePreset(service.serviceType).defaultBaseUrl || '',
+        });
+        setHasStoredKey(service.hasApiKey);
+        setServiceModels([]);
+        setTestStatus('idle');
+        setErrorText('');
+    };
+
+    const testService = async (service: Partial<AIServiceDraft> & { id?: string }) => {
+        setTestStatus('testing');
+        setErrorText('');
         try {
-            const result = await window.electronAPI.ensureOllamaRunning();
-            if (result && result.success) {
-                // It's running (or just started), now fetch models
-                checkOllama(true);
-            } else {
-                setOllamaStatus('not-found');
+            const result = await window.electronAPI.testAiService(service);
+            if (result.success) {
+                setTestStatus('success');
+                setTimeout(() => setTestStatus('idle'), 2500);
+                return;
             }
-        } catch (e) {
-            console.warn("Ollama ensure startup failed:", e);
-            setOllamaStatus('not-found');
+            setTestStatus('error');
+            setErrorText(result.error || 'Connection failed.');
+        } catch (error: any) {
+            setTestStatus('error');
+            setErrorText(error.message || 'Connection failed.');
         }
     };
 
-    const checkOllama = async (_isInitial = true) => {
-        // Don't override 'checking' if we are already in smart-start mode
-        // if (isInitial) setOllamaStatus('checking'); 
-
+    const fetchModels = async () => {
+        setIsFetchingModels(true);
+        setErrorText('');
         try {
-            const models = await window.electronAPI.getAvailableOllamaModels();
-            if (models && models.length > 0) {
-                setOllamaModels(models);
-                setOllamaStatus('detected');
-            } else {
-                // Silent failure on background checks
-                // Only set not-found if we haven't detected it yet
-                if (ollamaStatus !== 'detected') {
-                    setOllamaStatus('not-found');
+            const result = await window.electronAPI.fetchAiServiceModels(draft);
+            if (!result.success || !result.models) {
+                setErrorText(result.error || 'Could not fetch models.');
+                return;
+            }
+            setServiceModels(result.models);
+            if (!draft.model.trim() && result.models[0]) {
+                updateDraft('model', result.models[0].id);
+            }
+        } catch (error: any) {
+            setErrorText(error.message || 'Could not fetch models.');
+        } finally {
+            setIsFetchingModels(false);
+        }
+    };
+
+    const saveService = async () => {
+        setErrorText('');
+        if (!draft.name.trim()) return setErrorText('Service name is required.');
+        if (!draft.model.trim()) return setErrorText('Model name is required.');
+        if (!draft.baseUrl?.trim()) return setErrorText('Base URL is required.');
+        if (!editingServiceId && !draft.apiKey?.trim()) return setErrorText('API key is required for a new service.');
+
+        setIsSaving(true);
+        try {
+            const result = await window.electronAPI.saveAiService(draft);
+            if (!result.success) {
+                setErrorText(result.error || 'Could not save the service.');
+                return;
+            }
+
+            const runtimeId = result.id ? getAIServiceModelId(result.id) : '';
+            await loadData();
+
+            if (!defaultModel || defaultModel === runtimeId || defaultModel === getAIServiceModelId(editingServiceId || '')) {
+                if (runtimeId) {
+                    await window.electronAPI.setDefaultModel(runtimeId);
+                    setDefaultModel(runtimeId);
                 }
             }
-        } catch (e) {
-            // console.warn(`Ollama check failed:`, e);
-            if (ollamaStatus !== 'detected') {
-                setOllamaStatus('not-found');
-            }
-        }
-    };
 
-    const handleFixOllama = async () => {
-        setOllamaStatus('fixing');
-        try {
-            const result = await window.electronAPI.forceRestartOllama();
-            if (result && result.success) {
-                setOllamaRestarted(true);
-                // Wait for server to be ready
-                setTimeout(() => checkOllama(false), 2000);
-            } else {
-                setOllamaStatus('not-found');
-            }
-        } catch (e) {
-            console.error("Fix failed", e);
-            setOllamaStatus('not-found');
-        }
-    };
-
-    const saveProviderKey = (provider: CloudProvider, key: string) => {
-        switch (provider) {
-            case 'gemini':
-                return window.electronAPI.setGeminiApiKey(key);
-            case 'groq':
-                return window.electronAPI.setGroqApiKey(key);
-            case 'openai':
-                return window.electronAPI.setOpenaiApiKey(key);
-            case 'claude':
-                return window.electronAPI.setClaudeApiKey(key);
-        }
-    };
-
-    const handleSaveKey = async (provider: CloudProvider, key: string, setter: (val: string) => void) => {
-        if (!key.trim()) return;
-        setSavingStatus(prev => ({ ...prev, [provider]: true }));
-        try {
-            const result = await saveProviderKey(provider, key);
-
-            if (result && result.success) {
-                setSavedStatus(prev => ({ ...prev, [provider]: true }));
-                setHasStoredKey(prev => ({ ...prev, [provider]: true }));
-                setter('');
-                setTimeout(() => setSavedStatus(prev => ({ ...prev, [provider]: false })), 2000);
-            }
-        } catch (e) {
-            console.error(`Failed to save ${provider} key:`, e);
+            resetEditor(draft.serviceType);
+        } catch (error: any) {
+            setErrorText(error.message || 'Could not save the service.');
         } finally {
-            setSavingStatus(prev => ({ ...prev, [provider]: false }));
+            setIsSaving(false);
         }
     };
 
-    const handleRemoveKey = async (provider: CloudProvider, setter: (val: string) => void) => {
-        if (!confirm(`Are you sure you want to remove the ${provider} API key?`)) return;
+    const deleteService = async (service: AIServiceSummary) => {
+        if (!confirm(`Delete AI service "${service.name}"?`)) return;
+        await window.electronAPI.deleteAiService(service.id);
+        await loadData();
+    };
+
+    const refreshOllama = async () => {
+        setIsRefreshingOllama(true);
         try {
-            const result = await saveProviderKey(provider, '');
-
-            if (result && result.success) {
-                setHasStoredKey(prev => ({ ...prev, [provider]: false }));
-                setter('');
-            }
-        } catch (e) {
-            console.error(`Failed to remove ${provider} key:`, e);
-        }
-    };
-
-    const handleTestConnection = async (provider: CloudProvider, key: string) => {
-        // Allow testing if key is provided OR if we have a stored key
-        if (!key.trim() && !hasStoredKey[provider]) {
-            return;
-        }
-        setTestStatus(prev => ({ ...prev, [provider]: 'testing' }));
-        setTestError(prev => ({ ...prev, [provider]: '' }));
-
-        try {
-            const result = await window.electronAPI.testLlmConnection(provider, key);
-            if (result.success) {
-                setTestStatus(prev => ({ ...prev, [provider]: 'success' }));
-                setTimeout(() => setTestStatus(prev => ({ ...prev, [provider]: 'idle' })), 3000);
-            } else {
-                setTestStatus(prev => ({ ...prev, [provider]: 'error' }));
-                setTestError(prev => ({ ...prev, [provider]: result.error || 'Connection failed' }));
-            }
-        } catch (e: any) {
-            setTestStatus(prev => ({ ...prev, [provider]: 'error' }));
-            setTestError(prev => ({ ...prev, [provider]: e.message || 'Connection failed' }));
-        }
-    };
-
-    // --- Custom Provider Handlers ---
-
-    const handleEditProvider = (provider: CustomProvider) => {
-        setEditingProvider(provider);
-        setCustomName(provider.name);
-        setCustomCurl(provider.curlCommand);
-        setCustomResponsePath(provider.responsePath || '');
-        setIsEditingCustom(true);
-        setCurlError(null);
-    };
-
-    const handleNewProvider = () => {
-        setEditingProvider(null);
-        setCustomName('');
-        setCustomCurl('');
-        setCustomResponsePath('');
-        setIsEditingCustom(true);
-        setCurlError(null);
-    };
-
-    const handleSaveCustom = async () => {
-        setCurlError(null);
-        if (!customName.trim()) {
-            setCurlError("Provider Name is required.");
-            return;
-        }
-
-        const validation = validateCurl(customCurl);
-        if (!validation.isValid) {
-            setCurlError(validation.message || "Invalid cURL command.");
-            return;
-        }
-
-        const newProvider: CustomProvider = {
-            id: editingProvider ? editingProvider.id : crypto.randomUUID(),
-            name: customName,
-            curlCommand: customCurl,
-            responsePath: customResponsePath
-        };
-
-        try {
-            const result = await window.electronAPI.saveCustomProvider(newProvider);
-            if (result.success) {
-                // Refresh list
-                const updated = await window.electronAPI.getCustomProviders();
-                setCustomProviders(updated);
-                setIsEditingCustom(false);
-            } else {
-                setCurlError(result.error ?? null);
-            }
-        } catch (e: any) {
-            setCurlError(e.message);
-        }
-    };
-
-    const handleDeleteCustom = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this provider?")) return;
-        try {
-            const result = await window.electronAPI.deleteCustomProvider(id);
-            if (result.success) {
-                const updated = await window.electronAPI.getCustomProviders();
-                setCustomProviders(updated);
-            }
-        } catch (e) {
-            console.error("Failed to delete provider:", e);
+            const models = await window.electronAPI.getAvailableOllamaModels();
+            setOllamaModels(models || []);
+        } finally {
+            setTimeout(() => setIsRefreshingOllama(false), 300);
         }
     };
 
     return (
         <div className="space-y-5 animated fadeIn pb-10">
-            {/* Default Model for Chat */}
             <div className="space-y-5">
                 <div>
-                    <h3 className="text-sm font-bold text-text-primary mb-1">Default Model for Chat</h3>
-                    <p className="text-xs text-text-secondary mb-2">Primary model for new chats. Other configured models act as fallbacks.</p>
+                    <h3 className="text-sm font-bold text-text-primary mb-1">Default AI Model</h3>
+                    <p className="text-xs text-text-secondary mb-2">Choose which configured service or local Ollama model should answer by default.</p>
                 </div>
-
-                <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle flex items-center justify-between">
+                <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle flex items-center justify-between gap-4">
                     <div>
                         <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-0">Active Model</label>
-                        <p className="text-[10px] text-text-secondary">Applies to new chats instantly.</p>
+                        <p className="text-[10px] text-text-secondary">Only services you added yourself and detected local Ollama models appear here.</p>
                     </div>
-                    <ModelSelect
-                        value={defaultModel}
-                        options={(() => {
-                            const opts: { id: string; name: string }[] = [];
-                            for (const [prov, cfg] of Object.entries(STANDARD_CLOUD_MODELS)) {
-                                if (!hasStoredKey[prov as keyof typeof hasStoredKey]) continue;
-                                cfg.ids.forEach((id, i) => opts.push({ id, name: cfg.names[i] }));
-                                const pm = preferredModels[prov as keyof typeof preferredModels];
-                                if (pm && !cfg.ids.includes(pm)) {
-                                    opts.push({ id: pm, name: prettifyModelId(pm) });
-                                }
-                            }
-                            customProviders.forEach(p => opts.push({ id: p.id, name: p.name }));
-                            ollamaModels.forEach(m => opts.push({ id: `ollama-${m}`, name: `${m} (Local)` }));
-                            // Ensure current default model always appears
-                            if (defaultModel && !opts.find(o => o.id === defaultModel)) {
-                                opts.unshift({ id: defaultModel, name: prettifyModelId(defaultModel) });
-                            }
-                            return opts;
-                        })()}
-                        onChange={(val) => {
-                            setDefaultModel(val);
-                            void window.electronAPI.setDefaultModel(val).catch(console.error);
-                        }}
-                    />
-                </div>
-
-                {/* Fast Response Mode */}
-                <div
-                    className={`bg-bg-item-surface rounded-xl p-5 border border-border-subtle flex items-center justify-between ${!hasStoredKey.groq ? 'opacity-50 grayscale' : ''}`}
-                    title={!hasStoredKey.groq ? "Requires Groq API Key to be configured" : ""}
-                >
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-0">Fast Response Mode</label>
-                            <span className="bg-orange-500/10 text-orange-500 text-[9px] font-bold px-1.5 py-0.5 rounded border border-orange-500/20">NEW</span>
-                        </div>
-                        <p className="text-[10px] text-text-secondary mt-0.5">Super fast responses using Groq Llama 3 for text. Multimodal requests still use your Default Model.</p>
-                        {!hasStoredKey.groq && (
-                            <p className="text-[10px] text-orange-500 mt-0.5 font-medium">Requires a Groq API Key to be configured below.</p>
-                        )}
-                    </div>
-                    <div
-                        onClick={async () => {
-                            if (!hasStoredKey.groq) {
-                                alert("Please configure a Groq API Key first to enable Fast Response Mode.");
-                                return;
-                            }
-                            const newState = !fastResponseMode;
-                            setFastResponseMode(newState);
-                            localStorage.setItem('natively_groq_fast_text', String(newState));
-                            await window.electronAPI.setGroqFastTextMode(newState);
-                        }}
-                        className={`w-11 h-6 rounded-full relative transition-colors ${!hasStoredKey.groq ? 'cursor-not-allowed bg-bg-toggle-switch' : fastResponseMode ? 'bg-orange-500' : 'bg-bg-toggle-switch border border-border-muted'}`}
-                    >
-                        <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${fastResponseMode ? 'translate-x-5' : 'translate-x-0'}`} />
+                    <div className="w-72 max-w-full">
+                        <ModelSelect
+                            value={defaultModel}
+                            options={defaultOptions}
+                            onChange={(value) => {
+                                setDefaultModel(value);
+                                void window.electronAPI.setDefaultModel(value).catch(console.error);
+                            }}
+                            placeholder="Add a service first"
+                        />
                     </div>
                 </div>
             </div>
 
-            {/* Cloud Providers */}
             <div className="space-y-5">
-                <div>
-                    <h3 className="text-sm font-bold text-text-primary mb-1">Cloud Providers</h3>
-                    <p className="text-xs text-text-secondary mb-2">Add API keys to unlock cloud AI models.</p>
-                </div>
-
-                <div className="space-y-4">
-
-                    {/* Gemini */}
-                    <ProviderCard
-                        providerId="gemini"
-                        providerName="Gemini"
-                        apiKey={apiKey}
-                        preferredModel={preferredModels.gemini}
-                        hasStoredKey={!!hasStoredKey.gemini}
-                        onKeyChange={setApiKey}
-                        onSaveKey={async () => { await handleSaveKey('gemini', apiKey, setApiKey); }}
-                        onRemoveKey={() => handleRemoveKey('gemini', setApiKey)}
-                        onTestConnection={() => handleTestConnection('gemini', apiKey)}
-                        testStatus={testStatus.gemini || 'idle'}
-                        testError={testError.gemini}
-                        savingStatus={!!savingStatus.gemini}
-                        savedStatus={!!savedStatus.gemini}
-                        keyPlaceholder="AIzaSy..."
-                        keyUrl="https://aistudio.google.com/app/apikey"
-                        onPreferredModelChange={(model) => setPreferredModels(prev => ({ ...prev, gemini: model }))}
-                    />
-
-                    {/* Groq */}
-                    <ProviderCard
-                        providerId="groq"
-                        providerName="Groq"
-                        apiKey={groqApiKey}
-                        preferredModel={preferredModels.groq}
-                        hasStoredKey={!!hasStoredKey.groq}
-                        onKeyChange={setGroqApiKey}
-                        onSaveKey={async () => { await handleSaveKey('groq', groqApiKey, setGroqApiKey); }}
-                        onRemoveKey={() => handleRemoveKey('groq', setGroqApiKey)}
-                        onTestConnection={() => handleTestConnection('groq', groqApiKey)}
-                        testStatus={testStatus.groq || 'idle'}
-                        testError={testError.groq}
-                        savingStatus={!!savingStatus.groq}
-                        savedStatus={!!savedStatus.groq}
-                        keyPlaceholder="gsk_..."
-                        keyUrl="https://console.groq.com/keys"
-                        onPreferredModelChange={(model) => setPreferredModels(prev => ({ ...prev, groq: model }))}
-                    />
-
-                    {/* OpenAI */}
-                    <ProviderCard
-                        providerId="openai"
-                        providerName="OpenAI"
-                        apiKey={openaiApiKey}
-                        preferredModel={preferredModels.openai}
-                        hasStoredKey={!!hasStoredKey.openai}
-                        onKeyChange={setOpenaiApiKey}
-                        onSaveKey={async () => { await handleSaveKey('openai', openaiApiKey, setOpenaiApiKey); }}
-                        onRemoveKey={() => handleRemoveKey('openai', setOpenaiApiKey)}
-                        onTestConnection={() => handleTestConnection('openai', openaiApiKey)}
-                        testStatus={testStatus.openai || 'idle'}
-                        testError={testError.openai}
-                        savingStatus={!!savingStatus.openai}
-                        savedStatus={!!savedStatus.openai}
-                        keyPlaceholder="sk-..."
-                        keyUrl="https://platform.openai.com/api-keys"
-                        onPreferredModelChange={(model) => setPreferredModels(prev => ({ ...prev, openai: model }))}
-                    />
-
-                    {/* Claude */}
-                    <ProviderCard
-                        providerId="claude"
-                        providerName="Claude"
-                        apiKey={claudeApiKey}
-                        preferredModel={preferredModels.claude}
-                        hasStoredKey={!!hasStoredKey.claude}
-                        onKeyChange={setClaudeApiKey}
-                        onSaveKey={async () => { await handleSaveKey('claude', claudeApiKey, setClaudeApiKey); }}
-                        onRemoveKey={() => handleRemoveKey('claude', setClaudeApiKey)}
-                        onTestConnection={() => handleTestConnection('claude', claudeApiKey)}
-                        testStatus={testStatus.claude || 'idle'}
-                        testError={testError.claude}
-                        savingStatus={!!savingStatus.claude}
-                        savedStatus={!!savedStatus.claude}
-                        keyPlaceholder="sk-ant-..."
-                        keyUrl="https://console.anthropic.com/settings/keys"
-                        onPreferredModelChange={(model) => setPreferredModels(prev => ({ ...prev, claude: model }))}
-                    />
-
-                </div>
-            </div>
-
-            {/* Local (Ollama) Providers */}
-            <div className="space-y-5">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between">
                     <div>
-                        <h3 className="text-sm font-bold text-text-primary mb-1">Local Models (Ollama)</h3>
-                        <p className="text-xs text-text-secondary">Run open-source models locally.</p>
+                        <h3 className="text-sm font-bold text-text-primary mb-1">AI Services</h3>
+                        <p className="text-xs text-text-secondary">Add ChatGPT, OpenRouter, DeepSeek or any OpenAI-compatible API with your own key and model.</p>
                     </div>
-                    <button
-                        onClick={async () => {
-                            setIsRefreshingOllama(true);
-                            await checkOllama(false);
-                            // Add a small delay for visual feedback if the check is too fast
-                            setTimeout(() => setIsRefreshingOllama(false), 500);
-                        }}
-                        className="p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-input transition-colors"
-                        title="Refresh Ollama"
-                        disabled={isRefreshingOllama}
-                    >
-                        <RefreshCw size={18} className={isRefreshingOllama ? "animate-spin" : ""} />
-                    </button>
-                </div>
-
-                <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle">
-                    {ollamaStatus === 'checking' && (
-                        <div className="flex items-center gap-2 text-xs text-text-secondary">
-                            <Loader2 size={14} className="animate-spin" />
-                            <span>Checking for Ollama...</span>
-                        </div>
-                    )}
-
-                    {ollamaStatus === 'fixing' && (
-                        <div className="flex items-center gap-2 text-xs text-text-secondary">
-                            <Loader2 size={14} className="animate-spin" />
-                            <span>Attempting to auto-fix connection...</span>
-                        </div>
-                    )}
-
-                    {ollamaStatus === 'not-found' && (
-                        <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2 text-xs text-red-400">
-                                <AlertCircle size={14} />
-                                <span>Ollama not detected</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <p className="text-xs text-text-secondary">
-                                    Ensure Ollama is running (`ollama serve`).
-                                </p>
-                                <button
-                                    onClick={handleFixOllama}
-                                    className="text-[10px] bg-bg-elevated hover:bg-bg-input px-2 py-1 rounded border border-border-subtle"
-                                >
-                                    Auto-Fix Connection
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {ollamaStatus === 'detected' && ollamaModels.length > 0 && (
-                        <div className="space-y-3">
-                            <div className="flex items-center gap-2 text-xs text-green-400 mb-3">
-                                <CheckCircle size={14} />
-                                <span>Ollama connected</span>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-2">
-                                {ollamaModels.map(model => (
-                                    <div key={model} className="flex items-center justify-between p-2 bg-bg-input rounded-lg border border-border-subtle">
-                                        <span className="text-xs text-text-primary font-mono">{model}</span>
-                                        <span className="text-[10px] text-bg-elevated bg-text-secondary px-1.5 py-0.5 rounded-full font-bold">LOCAL</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                    {ollamaStatus === 'detected' && ollamaModels.length === 0 && (
-                        <div className="text-xs text-text-secondary">
-                            Ollama is running but no models found. Run `ollama pull llama3` to get started.
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Custom Providers */}
-            <div className="space-y-5">
-                <div className="flex items-center justify-between mb-2">
-                    <div>
-                        <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-sm font-bold text-text-primary">Custom Providers</h3>
-                            <span className="px-1.5 py-0 rounded-full text-[7px] font-bold bg-yellow-500/10 text-yellow-500 uppercase tracking-widest border border-yellow-500/20 leading-loose mt-0.5">Experimental</span>
-                        </div>
-                        <p className="text-xs text-text-secondary">Add your own AI endpoints via cURL.</p>
-                    </div>
-                    {!isEditingCustom && (
-                        <button
-                            onClick={handleNewProvider}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-bg-input hover:bg-bg-elevated border border-border-subtle rounded-lg text-xs font-medium text-text-primary transition-colors"
-                        >
-                            <Plus size={14} /> Add Provider
+                    {!isEditing && (
+                        <button type="button" onClick={beginCreate} className="flex items-center gap-2 px-3 py-1.5 bg-bg-input hover:bg-bg-elevated border border-border-subtle rounded-lg text-xs font-medium text-text-primary transition-colors">
+                            <Plus size={14} />
+                            Add Service
                         </button>
                     )}
                 </div>
 
-                {isEditingCustom ? (
+                {isEditing && (
                     <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle animated fadeIn">
-                        <h4 className="text-sm font-bold text-text-primary mb-4">{editingProvider ? 'Edit Provider' : 'New Provider'}</h4>
+                        <div className="flex items-start justify-between gap-4 mb-4">
+                            <div>
+                                <h4 className="text-sm font-bold text-text-primary">{editingServiceId ? 'Edit AI Service' : 'New AI Service'}</h4>
+                                <p className="text-xs text-text-secondary mt-1">{preset.description}</p>
+                            </div>
+                            {preset.keyUrl && (
+                                <button type="button" onClick={() => void window.electronAPI.openExternal(preset.keyUrl!)} className="text-xs text-text-tertiary hover:text-text-primary flex items-center gap-1 transition-colors">
+                                    <span className="text-[10px] uppercase tracking-wide">Get Key</span>
+                                    <ExternalLink size={12} />
+                                </button>
+                            )}
+                        </div>
 
                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">Provider Name</label>
-                                <input
-                                    type="text"
-                                    value={customName}
-                                    onChange={(e) => setCustomName(e.target.value)}
-                                    placeholder="My Custom LLM"
-                                    className="w-full bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">cURL Command</label>
-                                <div className="relative">
-                                    <textarea
-                                        value={customCurl}
-                                        onChange={(e) => setCustomCurl(e.target.value)}
-                                        placeholder={`curl https://api.openai.com/v1/chat/completions ... "content": "{{TEXT}}"`}
-                                        className="w-full h-32 bg-bg-input border border-border-subtle rounded-lg p-4 text-xs font-mono text-text-primary focus:outline-none focus:border-accent-primary transition-colors resize-none leading-relaxed"
-                                    />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">Service Type</label>
+                                    <select value={draft.serviceType} onChange={(event) => changeServiceType(event.target.value as AIServiceType)} className="w-full bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors">
+                                        {AI_SERVICE_PRESETS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">Display Name</label>
+                                    <input type="text" value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} placeholder={preset.defaultName} className="w-full bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors" />
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">
-                                    Response JSON Path <span className="text-text-tertiary normal-case font-normal">(Optional)</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={customResponsePath}
-                                    onChange={(e) => setCustomResponsePath(e.target.value)}
-                                    placeholder="e.g. choices[0].message.content"
-                                    className="w-full bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors font-mono"
-                                />
-                                <p className="text-[10px] text-text-secondary mt-1">
-                                    Dot notation path to the answer text in the JSON response. If empty, the full JSON is returned.
-                                </p>
-                            </div>
-
-                            <div className="bg-bg-elevated/30 rounded-lg overflow-hidden border border-border-subtle mt-4">
-                                <div className="px-4 py-3 bg-bg-elevated/50 border-b border-border-subtle flex items-center justify-between">
-                                    <h5 className="block text-xs font-medium text-text-primary uppercase tracking-wide">
-                                        Configuration Guide
-                                    </h5>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">Base URL</label>
+                                    <input type="text" value={draft.baseUrl || ''} onChange={(event) => updateDraft('baseUrl', event.target.value)} placeholder={preset.defaultBaseUrl || 'https://your-endpoint.example.com/v1'} className="w-full bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors font-mono" />
                                 </div>
-
-                                <div className="p-4 space-y-4">
-                                    <div>
-                                        <p className="text-xs text-text-secondary mb-2 font-medium">Available Variables</p>
-                                        <div className="grid grid-cols-1 gap-2">
-                                            <div className="flex items-center gap-2 text-xs">
-                                                <code className="bg-bg-input px-1.5 py-0.5 rounded text-text-primary font-mono border border-border-subtle">{"{{TEXT}}"}</code>
-                                                <span className="text-text-tertiary">Combined System + Context + Message (Recommended)</span>
-                                            </div>
-                                            <div className="flex items-center gap-2 text-xs">
-                                                <code className="bg-bg-input px-1.5 py-0.5 rounded text-text-primary font-mono border border-border-subtle">{"{{IMAGE_BASE64}}"}</code>
-                                                <span className="text-text-tertiary">Screenshot data (if available)</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <p className="text-xs text-text-secondary mb-2 font-medium">Examples</p>
-                                        <div className="space-y-3">
-                                            {/* Ollama Example */}
-                                            <div>
-                                                <div className="text-[10px] uppercase tracking-wider text-text-tertiary mb-1.5">Local (Ollama)</div>
-                                                <div className="bg-bg-input p-2.5 rounded-lg border border-border-subtle overflow-x-auto group relative">
-                                                    <code className="font-mono text-[10px] text-text-primary whitespace-pre block">
-                                                        curl http://localhost:11434/api/generate -d '{"{"}"model": "llama3", "prompt": "{`{{TEXT}}`}"{"}"}'
-                                                    </code>
-                                                </div>
-                                            </div>
-
-                                            {/* OpenAI Example */}
-                                            <div>
-                                                <div className="text-[10px] uppercase tracking-wider text-text-tertiary mb-1.5">OpenAI Compatible</div>
-                                                <div className="bg-bg-input p-2.5 rounded-lg border border-border-subtle overflow-x-auto">
-                                                    <code className="font-mono text-[10px] text-text-primary whitespace-pre block">
-                                                        {`curl https://api.openai.com/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -d '{
-    "model": "gpt-4o-mini",
-    "messages": [
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "{{TEXT}}"}
-    ],
-    "temperature": 0.7
-  }'`}
-                                                    </code>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">
+                                        API Key
+                                        {hasStoredKey && <span className="ml-2 text-green-500 normal-case">Stored on device</span>}
+                                    </label>
+                                    <input type="password" value={draft.apiKey || ''} onChange={(event) => updateDraft('apiKey', event.target.value)} placeholder={hasStoredKey ? 'Leave empty to keep saved key' : preset.keyPlaceholder} className="w-full bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors" />
                                 </div>
                             </div>
 
-                            {curlError && (
-                                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs">
-                                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                                    <span>{curlError}</span>
+                            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-end">
+                                <div>
+                                    <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">Model Name</label>
+                                    <input type="text" value={draft.model} onChange={(event) => updateDraft('model', event.target.value)} placeholder="gpt-4.1-mini / deepseek-chat / openai/gpt-4.1-mini" className="w-full bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors font-mono" />
+                                </div>
+                                <button type="button" onClick={fetchModels} disabled={isFetchingModels} className={`px-4 py-2.5 rounded-lg text-xs font-medium transition-colors border border-border-subtle flex items-center justify-center gap-2 ${isFetchingModels ? 'bg-bg-input text-text-secondary' : 'bg-accent-primary/10 text-accent-primary border-accent-primary/20 hover:bg-accent-primary/20'}`}>
+                                    {isFetchingModels ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                                    {isFetchingModels ? 'Loading...' : 'Fetch Models'}
+                                </button>
+                            </div>
+
+                            {fetchedModelOptions.length > 0 && (
+                                <div>
+                                    <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-1">Detected Models</label>
+                                    <ModelSelect value={draft.model} options={fetchedModelOptions} onChange={(value) => updateDraft('model', value)} placeholder="Select a detected model" />
                                 </div>
                             )}
 
-                            <div className="flex justify-end gap-3 pt-2">
-                                <button
-                                    onClick={() => setIsEditingCustom(false)}
-                                    className="px-4 py-2 rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-bg-input transition-colors"
-                                >
-                                    Cancel
+                            <div className="flex items-center justify-between gap-3 pt-2">
+                                <button type="button" onClick={() => void testService(draft)} disabled={testStatus === 'testing'} className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors border border-border-subtle flex items-center gap-2 ${testStatus === 'success' ? 'bg-green-500/10 text-green-500 border-green-500/20' : testStatus === 'error' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-bg-input hover:bg-bg-elevated text-text-primary'}`}>
+                                    {testStatus === 'testing' && <Loader2 size={14} className="animate-spin" />}
+                                    {testStatus === 'success' && <CheckCircle size={14} />}
+                                    {testStatus === 'error' && <AlertCircle size={14} />}
+                                    {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
                                 </button>
-                                <button
-                                    onClick={handleSaveCustom}
-                                    className="px-4 py-2 rounded-lg text-xs font-medium bg-accent-primary text-white hover:bg-accent-secondary transition-colors flex items-center gap-2"
-                                >
-                                    <Save size={14} /> Save Provider
-                                </button>
+                                <div className="flex items-center gap-3">
+                                    <button type="button" onClick={() => resetEditor(draft.serviceType)} className="px-4 py-2 rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-bg-input transition-colors">Cancel</button>
+                                    <button type="button" onClick={saveService} disabled={isSaving} className="px-4 py-2 rounded-lg text-xs font-medium bg-accent-primary text-white hover:bg-accent-secondary transition-colors flex items-center gap-2 disabled:opacity-60">
+                                        {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                        {isSaving ? 'Saving...' : 'Save Service'}
+                                    </button>
+                                </div>
                             </div>
+
+                            {errorText && (
+                                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs">
+                                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                                    <span>{errorText}</span>
+                                </div>
+                            )}
                         </div>
                     </div>
-                ) : (
+                )}
+
+                {!isEditing && (
                     <div className="space-y-3">
-                        {customProviders.length === 0 ? (
+                        {aiServices.length === 0 ? (
                             <div className="text-center py-8 bg-bg-item-surface rounded-xl border border-border-subtle border-dashed">
-                                <p className="text-xs text-text-tertiary">No custom providers added yet.</p>
+                                <p className="text-xs text-text-tertiary">No API services added yet.</p>
                             </div>
                         ) : (
-                            customProviders.map((provider) => (
-                                <div key={provider.id} className="bg-bg-item-surface rounded-xl p-4 border border-border-subtle flex items-center justify-between group">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-lg bg-bg-input flex items-center justify-center text-text-secondary font-mono text-xs font-bold">
-                                            {provider.name.substring(0, 2).toUpperCase()}
+                            aiServices.map((service) => {
+                                const runtimeId = getAIServiceModelId(service.id);
+                                const isDefault = defaultModel === runtimeId;
+                                return (
+                                    <div key={service.id} className="bg-bg-item-surface rounded-xl p-4 border border-border-subtle flex items-center justify-between gap-4">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <h4 className="text-sm font-medium text-text-primary">{service.name}</h4>
+                                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-bg-input text-text-secondary border border-border-subtle">{getAIServiceTypeLabel(service.serviceType)}</span>
+                                                {isDefault && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-green-500/10 text-green-500 border border-green-500/20">Default</span>}
+                                            </div>
+                                            <p className="text-[11px] text-text-secondary font-mono mt-1 truncate">{service.model}</p>
+                                            <p className="text-[10px] text-text-tertiary mt-1">{service.hasApiKey ? 'API key saved on this device' : 'API key missing'}</p>
                                         </div>
-                                        <div>
-                                            <h4 className="text-sm font-medium text-text-primary">{provider.name}</h4>
-                                            <p className="text-[10px] text-text-tertiary font-mono truncate max-w-[200px] opacity-60">
-                                                {provider.curlCommand.substring(0, 30)}...
-                                            </p>
-                                            {provider.responsePath && (
-                                                <p className="text-[9px] text-text-tertiary font-mono opacity-40 mt-0.5">
-                                                    path: {provider.responsePath}
-                                                </p>
-                                            )}
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <button type="button" onClick={() => { setDefaultModel(runtimeId); void window.electronAPI.setDefaultModel(runtimeId).catch(console.error); }} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-bg-input hover:bg-bg-elevated border border-border-subtle text-text-primary transition-colors">Use</button>
+                                            <button type="button" onClick={() => void testService({ id: service.id })} className="p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-input transition-colors" title="Test connection"><CheckCircle size={14} /></button>
+                                            <button type="button" onClick={() => beginEdit(service)} className="p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-input transition-colors" title="Edit"><PencilLine size={14} /></button>
+                                            <button type="button" onClick={() => void deleteService(service)} className="p-2 rounded-lg text-text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Delete"><Trash2 size={14} /></button>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                            onClick={() => handleEditProvider(provider)}
-                                            className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"
-                                            title="Edit"
-                                        >
-                                            <Edit2 size={14} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteCustom(provider.id)}
-                                            className="p-1.5 rounded-lg text-text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                                            title="Delete"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 )}
+            </div>
+
+            <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h3 className="text-sm font-bold text-text-primary mb-1">Local Models (Ollama)</h3>
+                        <p className="text-xs text-text-secondary">If a model is already downloaded in Ollama, it will appear here automatically and work offline.</p>
+                    </div>
+                    <button type="button" onClick={refreshOllama} className="p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-input transition-colors" title="Refresh Ollama models" disabled={isRefreshingOllama}>
+                        <RefreshCw size={18} className={isRefreshingOllama ? 'animate-spin' : ''} />
+                    </button>
+                </div>
+                <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle">
+                    {ollamaModels.length > 0 ? (
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-xs text-green-400 mb-3">
+                                <CheckCircle size={14} />
+                                <span>{ollamaModels.length} local model{ollamaModels.length > 1 ? 's' : ''} detected</span>
+                            </div>
+                            <div className="grid grid-cols-1 gap-2">
+                                {ollamaModels.map((model) => (
+                                    <div key={model} className="flex items-center justify-between p-2 bg-bg-input rounded-lg border border-border-subtle">
+                                        <span className="text-xs text-text-primary font-mono">{model}</span>
+                                        <button type="button" onClick={() => { const runtimeId = `ollama-${model}`; setDefaultModel(runtimeId); void window.electronAPI.setDefaultModel(runtimeId).catch(console.error); }} className="text-[10px] px-2 py-1 rounded border border-border-subtle hover:bg-bg-elevated transition-colors">Use</button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="text-xs text-text-secondary">No local Ollama models detected right now. If you download one later, it will appear here automatically.</p>
+                    )}
+                </div>
             </div>
         </div>
     );

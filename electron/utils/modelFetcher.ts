@@ -4,13 +4,51 @@
  */
 
 import axios from 'axios';
+import { AIServiceType, getAIServiceBaseUrl } from '../../src/lib/aiServiceCatalog';
 
 export interface ProviderModel {
     id: string;
     label: string;
 }
 
+interface ServiceModelFetchRequest {
+    serviceType: AIServiceType;
+    apiKey: string;
+    baseUrl?: string;
+}
+
 type Provider = 'gemini' | 'groq' | 'openai' | 'claude';
+
+export async function fetchServiceModels(request: ServiceModelFetchRequest): Promise<ProviderModel[]> {
+    const baseUrl = getAIServiceBaseUrl(request.serviceType, request.baseUrl);
+    const headers: Record<string, string> = {};
+
+    if (request.apiKey?.trim()) {
+        headers.Authorization = `Bearer ${request.apiKey.trim()}`;
+    }
+
+    if (!baseUrl) {
+        throw new Error('Base URL is required');
+    }
+
+    const response = await axios.get(`${baseUrl}/models`, {
+        headers,
+        timeout: 15000,
+    });
+
+    const payload = response.data?.data || response.data?.models || [];
+    if (!Array.isArray(payload)) {
+        return [];
+    }
+
+    return payload
+        .map((item: any) => ({
+            id: item.id || item.name,
+            label: item.name || item.display_name || item.id,
+        }))
+        .filter((item: ProviderModel) => !!item.id)
+        .sort((a, b) => a.label.localeCompare(b.label));
+}
 
 /**
  * Fetch available models from a provider's API.

@@ -41,6 +41,8 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { analytics, detectProviderType } from '../lib/analytics/analytics.service';
+import { CustomProviderSummary, formatRuntimeModelLabel } from '../lib/aiModelPresentation';
+import { AIServiceSummary } from '../lib/aiServiceCatalog';
 import { useShortcuts } from '../hooks/useShortcuts';
 import { useResolvedTheme } from '../hooks/useResolvedTheme';
 import { getOverlayAppearance, OVERLAY_OPACITY_DEFAULT } from '../lib/overlayAppearance';
@@ -125,7 +127,9 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting, ove
     });
 
     // Model Selection State
-    const [currentModel, setCurrentModel] = useState<string>('gemini-3-flash-preview');
+    const [currentModel, setCurrentModel] = useState<string>('');
+    const [modelAiServices, setModelAiServices] = useState<AIServiceSummary[]>([]);
+    const [modelCustomProviders, setModelCustomProviders] = useState<CustomProviderSummary[]>([]);
 
     // Dynamic Action Button Mode (Recap vs Brainstorm)
     const [actionButtonMode, setActionButtonMode] = useState<'recap' | 'brainstorm'>('recap');
@@ -172,6 +176,14 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting, ove
                 })
                 .catch((err: any) => console.error("Failed to fetch default model:", err));
         }
+
+        void Promise.all([
+            window.electronAPI?.getAiServices?.() || Promise.resolve([]),
+            window.electronAPI?.getCustomProviders?.() || Promise.resolve([]),
+        ]).then(([services, customProviders]) => {
+            setModelAiServices((services || []) as AIServiceSummary[]);
+            setModelCustomProviders((customProviders || []) as CustomProviderSummary[]);
+        }).catch(() => {});
     }, []);
 
     const handleModelSelect = (modelId: string) => {
@@ -2106,14 +2118,7 @@ Provide only the answer, nothing else.`;
                                         >
                                             <span className="truncate min-w-0 flex-1">
                                                 {(() => {
-                                                    const m = currentModel;
-                                                    if (m.startsWith('ollama-')) return m.replace('ollama-', '');
-                                                    if (m === 'gemini-3.1-flash-lite-preview') return 'Gemini 3.1 Flash';
-                                                    if (m === 'gemini-3.1-pro-preview') return 'Gemini 3.1 Pro';
-                                                    if (m === 'llama-3.3-70b-versatile') return 'Groq Llama 3.3';
-                                                    if (m === 'gpt-5.4') return 'GPT 5.4';
-                                                    if (m === 'claude-sonnet-4-6') return 'Sonnet 4.6';
-                                                    return m;
+                                                    return formatRuntimeModelLabel(currentModel, modelAiServices, modelCustomProviders);
                                                 })()}
                                             </span>
                                             <ChevronDown size={14} className="shrink-0 transition-transform" />

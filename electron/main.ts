@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, systemPreferences, screen } from "electron"
 import path from "path"
 import fs from "fs"
+import os from "os"
 import { autoUpdater } from "electron-updater"
 if (!app.isPackaged) {
   require('dotenv').config();
@@ -43,9 +44,8 @@ const LOG_MAX_BYTES = 10 * 1024 * 1024;
 
 function logToFile(msg: string) {
   try {
-    const logFile = getLogFile();
-    // If the app isn't ready yet (path not available), skip silently.
-    if (!logFile) return;
+    const logFile = getLogFile() ?? path.join(os.tmpdir(), ELECTRON_BRAND.logFileName);
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
 
     // P2-1: rotate the log file when it exceeds LOG_MAX_BYTES so that long-running
     // sessions (or meetings with dense transcripts) don't fill the user's disk.
@@ -112,17 +112,16 @@ console.error = (...args: any[]) => {
   } catch { }
 };
 
-import { initializeIpcHandlers } from "./ipcHandlers"
 import { WindowHelper } from "./WindowHelper"
 import { SettingsWindowHelper } from "./SettingsWindowHelper"
 import { ModelSelectorWindowHelper } from "./ModelSelectorWindowHelper"
 import { CropperWindowHelper } from "./CropperWindowHelper"
-import { ScreenshotHelper } from "./ScreenshotHelper"
+import type { ScreenshotHelper } from "./ScreenshotHelper"
 import { ELECTRON_BRAND } from "./config/brand"
 import { KeybindManager } from "./services/KeybindManager"
-import { ProcessingHelper } from "./ProcessingHelper"
+import type { ProcessingHelper } from "./ProcessingHelper"
 
-import { IntelligenceManager } from "./IntelligenceManager"
+import type { IntelligenceManager } from "./IntelligenceManager"
 import { SystemAudioCapture } from "./audio/SystemAudioCapture"
 import { MicrophoneCapture } from "./audio/MicrophoneCapture"
 import { GoogleSTT } from "./audio/GoogleSTT"
@@ -132,9 +131,7 @@ import { SonioxStreamingSTT } from "./audio/SonioxStreamingSTT"
 import { ElevenLabsStreamingSTT } from "./audio/ElevenLabsStreamingSTT"
 import { OpenAIStreamingSTT } from "./audio/OpenAIStreamingSTT"
 import { ThemeManager } from "./ThemeManager"
-import { RAGManager } from "./rag/RAGManager"
-import { DatabaseManager } from "./db/DatabaseManager"
-import { warmupIntentClassifier } from "./llm"
+import type { RAGManager } from "./rag/RAGManager"
 
 /** Unified type for all STT providers with optional extended capabilities */
 type STTProvider = (GoogleSTT | RestSTT | DeepgramStreamingSTT | SonioxStreamingSTT | ElevenLabsStreamingSTT | OpenAIStreamingSTT) & {
@@ -172,6 +169,37 @@ import { SettingsManager } from "./services/SettingsManager"
 import { setVerboseLoggingFlag } from "./verboseLog"
 import { ReleaseNotesManager } from "./update/ReleaseNotesManager"
 import { OllamaManager } from './services/OllamaManager'
+
+const getPackagedAppIconPath = (): string => {
+  if (process.platform === 'darwin') {
+    return app.isPackaged
+      ? path.join(process.resourcesPath, 'icon.icns')
+      : path.join(app.getAppPath(), 'assets/icons/mac/icon.icns');
+  }
+
+  if (process.platform === 'win32') {
+    return app.isPackaged
+      ? path.join(process.resourcesPath, 'assets/icons/win/icon1.ico')
+      : path.join(app.getAppPath(), 'assets/icons/win/icon1.ico');
+  }
+
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'assets/icons/png/icon_512x512.png')
+    : path.join(app.getAppPath(), 'assets/icons/png/icon_512x512.png');
+};
+
+const getTrayIconPath = (): string => {
+  const resourcesPath = app.isPackaged ? process.resourcesPath : app.getAppPath();
+  const templatePath = path.join(resourcesPath, 'assets', 'iconTemplate.png');
+
+  if (fs.existsSync(templatePath)) {
+    return templatePath;
+  }
+
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'assets/icons/png/icon_32x32.png')
+    : path.join(app.getAppPath(), 'assets/icons/png/icon_32x32.png');
+};
 
 export class AppState {
   private static instance: AppState | null = null
@@ -248,7 +276,9 @@ export class AppState {
     this.cropperWindowHelper = new CropperWindowHelper()
 
     // 3. Initialize other helpers
+    const { ScreenshotHelper } = require("./ScreenshotHelper") as typeof import("./ScreenshotHelper")
     this.screenshotHelper = new ScreenshotHelper(this.view)
+    const { ProcessingHelper } = require("./ProcessingHelper") as typeof import("./ProcessingHelper")
     this.processingHelper = new ProcessingHelper(this)
 
     this.windowHelper.setContentProtection(this.isUndetectable);
@@ -392,6 +422,7 @@ export class AppState {
 
 
     // Initialize IntelligenceManager with LLMHelper
+    const { IntelligenceManager } = require("./IntelligenceManager") as typeof import("./IntelligenceManager")
     this.intelligenceManager = new IntelligenceManager(this.processingHelper.getLLMHelper())
 
     // Initialize ThemeManager
@@ -407,6 +438,7 @@ export class AppState {
     this.setupIntelligenceEvents()
 
     // Pre-warm the zero-shot intent classifier in background
+    const { warmupIntentClassifier } = require("./llm") as typeof import("./llm")
     warmupIntentClassifier();
 
     // Setup Ollama IPC
@@ -478,6 +510,8 @@ export class AppState {
 
   private initializeRAGManager(): void {
     try {
+      const { DatabaseManager } = require('./db/DatabaseManager') as typeof import('./db/DatabaseManager');
+      const { RAGManager } = require('./rag/RAGManager') as typeof import('./rag/RAGManager');
       const db = DatabaseManager.getInstance();
       const sqliteDb = db.getDb();
 
@@ -504,6 +538,7 @@ export class AppState {
 
     // Initialize Knowledge Orchestrator
     try {
+      const { DatabaseManager } = require('./db/DatabaseManager') as typeof import('./db/DatabaseManager');
       const db = DatabaseManager.getInstance();
       const sqliteDb = db.getDb();
 
@@ -1263,8 +1298,9 @@ export class AppState {
       const cm = CredentialsManager.getInstance();
       const defaultModel = cm.getDefaultModel();
       const all = [...(cm.getCurlProviders() || []), ...(cm.getCustomProviders() || [])];
+      const aiServices = cm.getAiServices();
       console.log(`[Main] Reverting model to default: ${defaultModel}`);
-      this.processingHelper.getLLMHelper().setModel(defaultModel, all);
+      this.processingHelper.getLLMHelper().setModel(defaultModel, all, aiServices);
       BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed()) win.webContents.send('model-changed', defaultModel);
       });
@@ -1318,11 +1354,12 @@ export class AppState {
     try {
       // Use the explicit meetingId passed from endMeeting() — deterministic, never
       // picks up a concurrently started meeting the way getRecentMeetings(1) could.
+      const { DatabaseManager } = require('./db/DatabaseManager') as typeof import('./db/DatabaseManager');
       const meeting = DatabaseManager.getInstance().getMeetingDetails(meetingId);
       if (!meeting || !meeting.transcript || meeting.transcript.length === 0) return;
 
       // Convert transcript to RAG format
-      const segments = meeting.transcript.map(t => ({
+      const segments = meeting.transcript.map((t) => ({
         speaker: t.speaker,
         text: t.text,
         timestamp: t.timestamp
@@ -1333,7 +1370,7 @@ export class AppState {
       if (meeting.detailedSummary) {
         summary = [
           ...(meeting.detailedSummary.keyPoints || []),
-          ...(meeting.detailedSummary.actionItems || []).map(a => `Action: ${a}`)
+          ...(meeting.detailedSummary.actionItems || []).map((a: string) => `Action: ${a}`)
         ].join('. ');
       }
 
@@ -1794,35 +1831,8 @@ export class AppState {
   public showTray(): void {
     if (this.tray) return;
 
-    // Try to find a template image first for macOS
-    const resourcesPath = app.isPackaged ? process.resourcesPath : app.getAppPath();
-
-    // Potential paths for tray icon
-    const templatePath = path.join(resourcesPath, 'assets', 'iconTemplate.png');
-    const defaultIconPath = app.isPackaged
-      ? path.join(resourcesPath, 'src/components/icon.png')
-      : path.join(app.getAppPath(), 'src/components/icon.png');
-
-    let iconToUse = defaultIconPath;
-
-    // Check if template exists (sync check is fine for startup/rare toggle)
-    try {
-      if (require('fs').existsSync(templatePath)) {
-        iconToUse = templatePath;
-        console.log('[Tray] Using template icon:', templatePath);
-      } else {
-        // Also check src/components for dev
-        const devTemplatePath = path.join(app.getAppPath(), 'src/components/iconTemplate.png');
-        if (require('fs').existsSync(devTemplatePath)) {
-          iconToUse = devTemplatePath;
-          console.log('[Tray] Using dev template icon:', devTemplatePath);
-        } else {
-          console.log('[Tray] Template icon not found, using default:', defaultIconPath);
-        }
-      }
-    } catch (e) {
-      console.error('[Tray] Error checking for icon:', e);
-    }
+    const iconToUse = getTrayIconPath();
+    console.log('[Tray] Using tray icon:', iconToUse);
 
     const trayIcon = nativeImage.createFromPath(iconToUse).resize({ width: 16, height: 16 });
     // IMPORTANT: specific template settings for macOS if needed, but 'Template' in name usually suffices
@@ -2085,7 +2095,7 @@ export class AppState {
   }
 
   private _applyDisguise(mode: 'terminal' | 'settings' | 'activity' | 'none'): void {
-    let appName = ELECTRON_BRAND.appName;
+    let appName: string = ELECTRON_BRAND.appName;
     let iconPath = "";
 
     const isWin = process.platform === 'win32';
@@ -2130,19 +2140,7 @@ export class AppState {
         break;
       case 'none':
         appName = ELECTRON_BRAND.appName;
-        if (isMac) {
-          iconPath = app.isPackaged
-            ? path.join(process.resourcesPath, "natively.icns")
-            : path.join(app.getAppPath(), "assets/natively.icns");
-        } else if (isWin) {
-          iconPath = app.isPackaged
-            ? path.join(process.resourcesPath, "assets/icons/win/icon.ico")
-            : path.join(app.getAppPath(), "assets/icons/win/icon.ico");
-        } else {
-          iconPath = app.isPackaged
-            ? path.join(process.resourcesPath, "icon.png")
-            : path.join(app.getAppPath(), "assets/icon.png");
-        }
+        iconPath = getPackagedAppIconPath();
         break;
     }
 
@@ -2293,6 +2291,7 @@ async function initializeApp() {
   appState.processingHelper.loadStoredCredentials();
 
   // Initialize IPC handlers before window creation
+  const { initializeIpcHandlers } = require('./ipcHandlers') as typeof import('./ipcHandlers');
   initializeIpcHandlers(appState)
 
   // Apply the full disguise payload (names, dock icon, AUMID) early
@@ -2425,4 +2424,6 @@ async function initializeApp() {
 }
 
 // Start the application
-initializeApp().catch(console.error)
+initializeApp().catch((error) => {
+  console.error('[Main] initializeApp fatal error:', error);
+})

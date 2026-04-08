@@ -856,6 +856,208 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
+  safeHandle("get-ai-services", async () => {
+    try {
+      const { CredentialsManager } = require('./services/CredentialsManager');
+      return CredentialsManager.getInstance().getAiServiceSummaries();
+    } catch (error: any) {
+      console.error("Error getting AI services:", error);
+      return [];
+    }
+  });
+
+  safeHandle("save-ai-service", async (_, draft: unknown) => {
+    try {
+      const {
+        AI_SERVICE_PRESETS,
+        getAIServiceBaseUrl,
+      } = require('../src/lib/aiServiceCatalog');
+
+      if (
+        typeof draft !== 'object' || draft === null ||
+        typeof (draft as any).name !== 'string' ||
+        typeof (draft as any).serviceType !== 'string' ||
+        typeof (draft as any).model !== 'string'
+      ) {
+        return { success: false, error: 'Invalid AI service payload' };
+      }
+
+      const presetIds = new Set(AI_SERVICE_PRESETS.map((preset: any) => preset.id));
+      const serviceType = (draft as any).serviceType;
+      if (!presetIds.has(serviceType)) {
+        return { success: false, error: 'Unsupported AI service type' };
+      }
+
+      const name = (draft as any).name.trim();
+      const model = (draft as any).model.trim();
+      const baseUrl = getAIServiceBaseUrl(serviceType, (draft as any).baseUrl);
+      const apiKey = ((draft as any).apiKey || '').trim();
+
+      if (!name) {
+        return { success: false, error: 'Service name is required' };
+      }
+
+      if (!model) {
+        return { success: false, error: 'Model name is required' };
+      }
+
+      if (!baseUrl) {
+        return { success: false, error: 'Base URL is required' };
+      }
+
+      const { CredentialsManager } = require('./services/CredentialsManager');
+      const cm = CredentialsManager.getInstance();
+      const existing = typeof (draft as any).id === 'string'
+        ? cm.getAiServiceById((draft as any).id)
+        : undefined;
+
+      if (!existing && !apiKey) {
+        return { success: false, error: 'API key is required for a new service' };
+      }
+
+      const saved = cm.saveAiService({
+        id: typeof (draft as any).id === 'string' ? (draft as any).id : undefined,
+        name,
+        serviceType,
+        model,
+        apiKey,
+        baseUrl,
+      });
+
+      const llmHelper = appState.processingHelper.getLLMHelper();
+      const currentModel = llmHelper.getCurrentModel();
+      const savedModelId = `service:${saved.id}`;
+      const allProviders = [...(cm.getCurlProviders() || []), ...(cm.getCustomProviders() || [])];
+      const aiServices = cm.getAiServices();
+
+      if (currentModel === savedModelId || cm.getDefaultModel() === savedModelId) {
+        llmHelper.setModel(savedModelId, allProviders, aiServices);
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('model-changed', savedModelId);
+          }
+        });
+      }
+
+      return { success: true, id: saved.id };
+    } catch (error: any) {
+      console.error("Error saving AI service:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("delete-ai-service", async (_, id: string) => {
+    try {
+      const { CredentialsManager } = require('./services/CredentialsManager');
+      const { getAIServiceModelId } = require('../src/lib/aiServiceCatalog');
+      const cm = CredentialsManager.getInstance();
+      const removedModelId = getAIServiceModelId(id);
+      const currentDefault = cm.getDefaultModel();
+
+      cm.deleteAiService(id);
+
+      if (currentDefault === removedModelId) {
+        const nextService = cm.getAiServices()[0];
+        const nextModelId = nextService ? getAIServiceModelId(nextService.id) : 'gemini-3.1-flash-lite-preview';
+        cm.setDefaultModel(nextModelId);
+      }
+
+      const llmHelper = appState.processingHelper.getLLMHelper();
+      const allProviders = [...(cm.getCurlProviders() || []), ...(cm.getCustomProviders() || [])];
+      llmHelper.setModel(cm.getDefaultModel(), allProviders, cm.getAiServices());
+
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('model-changed', cm.getDefaultModel());
+        }
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error("Error deleting AI service:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("test-ai-service", async (_, draft: unknown) => {
+    try {
+      const { CredentialsManager } = require('./services/CredentialsManager');
+      const { getAIServiceBaseUrl } = require('../src/lib/aiServiceCatalog');
+      const cm = CredentialsManager.getInstance();
+      const axios = require('axios');
+
+      let resolved: any = null;
+      if (typeof draft === 'object' && draft !== null && typeof (draft as any).id === 'string') {
+        resolved = cm.getAiServiceById((draft as any).id);
+      }
+      if (!resolved && typeof draft === 'object' && draft !== null) {
+        resolved = draft;
+      }
+      if (!resolved) {
+        return { success: false, error: 'Invalid AI service payload' };
+      }
+
+      const serviceType = resolved.serviceType;
+      const apiKey = (resolved.apiKey || cm.getAiServiceById(resolved.id || '')?.apiKey || '').trim();
+      const baseUrl = getAIServiceBaseUrl(serviceType, resolved.baseUrl);
+
+      if (!apiKey) {
+        return { success: false, error: 'No API key provided' };
+      }
+
+      if (serviceType === 'openrouter') {
+        const response = await axios.get(`${baseUrl}/key`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          timeout: 15000
+        });
+        return { success: response.status === 200 };
+      }
+
+      const response = await axios.get(`${baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        timeout: 15000
+      });
+      return { success: response.status === 200 };
+    } catch (error: any) {
+      const rawMsg = error?.response?.data?.error?.message
+        || error?.response?.data?.message
+        || error?.message
+        || 'Connection failed';
+      return { success: false, error: sanitizeErrorMessage(rawMsg) };
+    }
+  });
+
+  safeHandle("fetch-ai-service-models", async (_, draft: unknown) => {
+    try {
+      const { CredentialsManager } = require('./services/CredentialsManager');
+      const { fetchServiceModels } = require('./utils/modelFetcher');
+      const cm = CredentialsManager.getInstance();
+
+      let resolved: any = null;
+      if (typeof draft === 'object' && draft !== null && typeof (draft as any).id === 'string') {
+        resolved = cm.getAiServiceById((draft as any).id);
+      }
+      if (!resolved && typeof draft === 'object' && draft !== null) {
+        resolved = draft;
+      }
+      if (!resolved) {
+        return { success: false, error: 'Invalid AI service payload' };
+      }
+
+      const models = await fetchServiceModels({
+        serviceType: resolved.serviceType,
+        apiKey: resolved.apiKey || cm.getAiServiceById(resolved.id || '')?.apiKey || '',
+        baseUrl: resolved.baseUrl,
+      });
+
+      return { success: true, models };
+    } catch (error: any) {
+      console.error('[IPC] Failed to fetch AI service models:', error);
+      const msg = error?.response?.data?.error?.message || error.message || 'Failed to fetch models';
+      return { success: false, error: msg };
+    }
+  });
+
 
   // cURL Provider Handlers
   safeHandle("get-curl-providers", async () => {
@@ -1409,8 +1611,9 @@ export function initializeIpcHandlers(appState: AppState): void {
       const curlProviders = cm.getCurlProviders();
       const legacyProviders = cm.getCustomProviders() || [];
       const allProviders = [...curlProviders, ...legacyProviders];
+      const aiServices = cm.getAiServices();
 
-      llmHelper.setModel(modelId, allProviders);
+      llmHelper.setModel(modelId, allProviders, aiServices);
 
       // Close the selector window if open
       appState.modelSelectorWindowHelper.hideWindow();
@@ -1441,7 +1644,8 @@ export function initializeIpcHandlers(appState: AppState): void {
       const curlProviders = cm.getCurlProviders();
       const legacyProviders = cm.getCustomProviders() || [];
       const allProviders = [...curlProviders, ...legacyProviders];
-      llmHelper.setModel(modelId, allProviders);
+      const aiServices = cm.getAiServices();
+      llmHelper.setModel(modelId, allProviders, aiServices);
 
       // Close the selector window if open
       appState.modelSelectorWindowHelper.hideWindow();
@@ -2397,4 +2601,3 @@ export function initializeIpcHandlers(appState: AppState): void {
     return;
   });
 }
-

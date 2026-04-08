@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
+import { AIServiceDraft, AIServiceSummary, AIServiceType } from "../src/lib/aiServiceCatalog";
 
 // Types for the exposed Electron API
 interface ElectronAPI {
@@ -47,7 +48,7 @@ interface ElectronAPI {
   quitApp: () => Promise<void>
 
   // LLM Model Management
-  getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini"; model: string; isOllama: boolean }>
+  getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini" | "custom" | "service"; model: string; isOllama: boolean }>
   getAvailableOllamaModels: () => Promise<string[]>
   switchToOllama: (model?: string, url?: string) => Promise<{ success: boolean; error?: string }>
   switchToGemini: (apiKey?: string, modelId?: string) => Promise<{ success: boolean; error?: string }>
@@ -145,6 +146,11 @@ interface ElectronAPI {
   saveCustomProvider: (provider: any) => Promise<{ success: boolean; id?: string; error?: string }>
   getCustomProviders: () => Promise<any[]>
   deleteCustomProvider: (id: string) => Promise<{ success: boolean; error?: string }>
+  getAiServices: () => Promise<AIServiceSummary[]>
+  saveAiService: (service: AIServiceDraft) => Promise<{ success: boolean; id?: string; error?: string }>
+  deleteAiService: (id: string) => Promise<{ success: boolean; error?: string }>
+  testAiService: (service: Partial<AIServiceDraft> & { id?: string }) => Promise<{ success: boolean; error?: string }>
+  fetchAiServiceModels: (service: Partial<AIServiceDraft> & { id?: string }) => Promise<{ success: boolean; models?: { id: string; label: string }[]; error?: string }>
 
   // Follow-up Email
   generateFollowupEmail: (input: any) => Promise<string>
@@ -790,6 +796,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveCustomProvider: (provider: any) => ipcRenderer.invoke('save-custom-provider', provider),
   getCustomProviders: () => ipcRenderer.invoke('get-custom-providers'),
   deleteCustomProvider: (id: string) => ipcRenderer.invoke('delete-custom-provider', id),
+  getAiServices: () => ipcRenderer.invoke('get-ai-services'),
+  saveAiService: (service: AIServiceDraft) => ipcRenderer.invoke('save-ai-service', service),
+  deleteAiService: (id: string) => ipcRenderer.invoke('delete-ai-service', id),
+  testAiService: (service: Partial<AIServiceDraft> & { id?: string }) => ipcRenderer.invoke('test-ai-service', service),
+  fetchAiServiceModels: (service: Partial<AIServiceDraft> & { id?: string }) => ipcRenderer.invoke('fetch-ai-service-models', service),
 
   // Follow-up Email
   generateFollowupEmail: (input: any) => ipcRenderer.invoke('generate-followup-email', input),

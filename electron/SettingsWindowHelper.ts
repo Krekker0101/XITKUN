@@ -1,12 +1,13 @@
 import { BrowserWindow, screen, app } from "electron"
 import { WindowHelper } from "./WindowHelper"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 
 const isDev = process.env.NODE_ENV === "development"
 
 const startUrl = isDev
     ? "http://localhost:5180"
-    : `file://${path.join(app.getAppPath(), "dist/index.html")}`
+    : pathToFileURL(path.join(app.getAppPath(), "dist/index.html")).toString()
 
 type WindowActivationOptions = {
     activate?: boolean

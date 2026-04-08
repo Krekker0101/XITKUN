@@ -1,26 +1,27 @@
 const githubOwner = "AbdullohAshurov";
 const githubRepo = "abdulloh-ashurov-assistant";
 const githubBaseUrl = `https://github.com/${githubOwner}/${githubRepo}`;
+const portfolioUrl = "https://tajik-develop.yzz.me";
 
 export const BRAND = {
-  appName: "Abdulloh Ashurov Assistant",
-  shortAppName: "Ashurov Assistant",
+  appName: "XITKUN",
+  shortAppName: "XITKUN",
   ownerName: "Abdulloh Ashurov",
   tagline: "Private, local-first AI copilot for meetings, interviews, and focused work.",
   description:
     "A polished desktop AI assistant for live conversations, on-device context, and private workflows.",
   repositoryOwner: githubOwner,
   repositoryName: githubRepo,
-  repositoryUrl: githubBaseUrl,
-  issuesUrl: `${githubBaseUrl}/issues`,
+  repositoryUrl: portfolioUrl,
+  issuesUrl: "",
   releasesUrl: `${githubBaseUrl}/releases`,
-  websiteUrl: "",
+  websiteUrl: portfolioUrl,
   supportUrl: "",
   contactEmail: "",
   xUrl: "",
   linkedinUrl: "",
   instagramUrl: "",
-  releaseAssetBaseName: "Abdulloh-Ashurov-Assistant",
+  releaseAssetBaseName: "XITKUN",
 } as const;
 
 export const hasConfiguredLink = (url?: string | null): url is string =>

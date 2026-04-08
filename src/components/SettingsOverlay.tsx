@@ -21,9 +21,19 @@ import {
     OVERLAY_OPACITY_MIN,
     getDefaultOverlayOpacity,
 } from '../lib/overlayAppearance';
+import {
+    ANTI_EVASION_SIMULATION_SCENARIOS,
+    emitAntiEvasionSimulationProbe,
+    getAntiEvasionSimulationState,
+    resetAntiEvasionSimulation,
+    setAntiEvasionSimulationScenario,
+    subscribeAntiEvasionSimulation,
+    type AntiEvasionSimulationScenarioKey,
+    type AntiEvasionSimulationState,
+} from '../lib/antiEvasionSimulation';
 import { KeyRecorder } from './ui/KeyRecorder';
 import { ProfileVisualizer, PremiumUpgradeModal } from '../premium';
-import icon from './icon.png';
+import icon from '../assets/appIcon';
 import { BRAND } from '../config/brand';
 
 // ---------------------------------------------------------------------------
@@ -139,7 +149,7 @@ const MockupNativelyInterface = ({ opacity }: { opacity: number }) => {
                             <div className="flex items-center justify-between mt-3 px-0.5">
                                 <div className="flex items-center gap-1.5">
                                     <div className="flex items-center gap-2 px-3 py-1.5 border rounded-lg text-xs font-medium w-[140px] overlay-control-surface overlay-text-interactive" style={appearance.controlStyle}>
-                                        <span className="truncate min-w-0 flex-1">Gemini 3 Flash</span>
+                                        <span className="truncate min-w-0 flex-1">Selected AI</span>
                                         <ChevronDown size={14} className="shrink-0" />
                                     </div>
                                     <div className="w-px h-3 mx-1" style={appearance.dividerStyle} />
@@ -421,6 +431,14 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
     const [negotiationGenerating, setNegotiationGenerating] = useState(false);
     const [negotiationError, setNegotiationError] = useState('');
     const [verboseLogging, setVerboseLogging] = useState(false);
+    const [antiEvasionSimulation, setAntiEvasionSimulation] = useState<AntiEvasionSimulationState>(() =>
+        getAntiEvasionSimulationState()
+    );
+
+    useEffect(() => {
+        const unsubscribe = subscribeAntiEvasionSimulation(setAntiEvasionSimulation);
+        return () => unsubscribe();
+    }, []);
 
     // Close dropdown when clicking outside
     // Sync with global state changes
@@ -778,6 +796,25 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
             await window.electronAPI.setThemeMode(mode);
         }
     };
+
+    const handleAntiEvasionToggle = (
+        scenario: AntiEvasionSimulationScenarioKey,
+        enabled: boolean
+    ) => {
+        setAntiEvasionSimulation(setAntiEvasionSimulationScenario(scenario, enabled));
+    };
+
+    const handleAntiEvasionProbe = (scenario: AntiEvasionSimulationScenarioKey) => {
+        setAntiEvasionSimulation(emitAntiEvasionSimulationProbe(scenario));
+    };
+
+    const handleAntiEvasionReset = () => {
+        setAntiEvasionSimulation(resetAntiEvasionSimulation());
+    };
+
+    const activeAntiEvasionSimulationCount = ANTI_EVASION_SIMULATION_SCENARIOS.filter(
+        (scenario) => antiEvasionSimulation[scenario.key]
+    ).length;
 
     // Audio Settings
     const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
@@ -1658,6 +1695,133 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
                                                     <span className="text-xs font-medium">{option.label}</span>
                                                 </button>
                                             ))}
+                                        </div>
+                                    </div>
+
+                                    <div className={`${isLight ? 'bg-bg-card' : 'bg-bg-item-surface'} rounded-xl p-5 border border-border-subtle`}>
+                                        <div className="flex items-start justify-between gap-4 mb-4">
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <AlertCircle className={activeAntiEvasionSimulationCount > 0 ? 'text-amber-400' : 'text-text-primary'} size={18} />
+                                                    <h3 className="text-lg font-bold text-text-primary">Anti-Evasion Simulator</h3>
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                        Safe Test Mode
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-text-secondary mt-1 leading-relaxed">
+                                                    Emits internal test signals that mimic stealth-oriented requests without actually hiding windows,
+                                                    excluding the app from capture, or spoofing browser focus.
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={handleAntiEvasionReset}
+                                                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-bg-input hover:bg-bg-elevated border border-border-subtle text-text-primary transition-colors"
+                                            >
+                                                Reset
+                                            </button>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            {ANTI_EVASION_SIMULATION_SCENARIOS.map((scenario) => {
+                                                const isActive = antiEvasionSimulation[scenario.key];
+                                                const icon = scenario.key === 'taskbarHidden'
+                                                    ? <Layout size={16} />
+                                                    : scenario.key === 'captureExclusion'
+                                                        ? <Monitor size={16} />
+                                                        : <Keyboard size={16} />;
+
+                                                return (
+                                                    <div
+                                                        key={scenario.key}
+                                                        className={`rounded-xl border p-3 transition-colors ${isActive ? 'border-amber-500/30 bg-amber-500/5' : 'border-border-subtle bg-bg-input/40'}`}
+                                                    >
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="flex items-start gap-3 min-w-0">
+                                                                <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${isActive ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' : 'border-border-subtle text-text-tertiary bg-bg-item-surface'}`}>
+                                                                    {icon}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <h4 className="text-sm font-semibold text-text-primary">{scenario.title}</h4>
+                                                                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${isActive ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25' : 'bg-bg-item-surface text-text-tertiary border border-border-subtle'}`}>
+                                                                            {isActive ? 'Active' : 'Idle'}
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-xs text-text-secondary mt-1 leading-relaxed">
+                                                                        {scenario.description}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            <div
+                                                                onClick={() => handleAntiEvasionToggle(scenario.key, !isActive)}
+                                                                className={`w-11 h-6 rounded-full relative transition-colors shrink-0 cursor-pointer ${isActive ? 'bg-amber-500' : 'bg-bg-toggle-switch border border-border-muted'}`}
+                                                            >
+                                                                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-3 flex items-center justify-between gap-3">
+                                                            <p className="text-[11px] text-text-tertiary">
+                                                                Sends a safe simulator signal that your detection layer can treat like a live attempt.
+                                                            </p>
+                                                            <button
+                                                                onClick={() => handleAntiEvasionProbe(scenario.key)}
+                                                                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-bg-item-surface hover:bg-bg-elevated border border-border-subtle text-text-primary transition-colors"
+                                                            >
+                                                                Emit Test Signal
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <div className="mt-4 rounded-xl border border-border-subtle bg-bg-input/40 overflow-hidden">
+                                            <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between gap-3">
+                                                <div>
+                                                    <h4 className="text-sm font-semibold text-text-primary">Recent Simulation Events</h4>
+                                                    <p className="text-xs text-text-secondary mt-0.5">
+                                                        Latest internal signals emitted by the safe anti-evasion simulator.
+                                                    </p>
+                                                </div>
+                                                <span className="text-[11px] font-medium text-text-tertiary">
+                                                    {antiEvasionSimulation.events.length} event{antiEvasionSimulation.events.length === 1 ? '' : 's'}
+                                                </span>
+                                            </div>
+
+                                            <div className="divide-y divide-border-subtle">
+                                                {antiEvasionSimulation.events.length === 0 ? (
+                                                    <div className="px-4 py-4 text-xs text-text-tertiary">
+                                                        No simulated signals yet. Toggle a scenario or emit a test signal to start logging.
+                                                    </div>
+                                                ) : (
+                                                    antiEvasionSimulation.events.slice(0, 5).map((event) => (
+                                                        <div key={event.id} className="px-4 py-3 flex items-start justify-between gap-4">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <span className="text-xs font-semibold text-text-primary">{event.title}</span>
+                                                                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${event.action === 'enabled'
+                                                                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+                                                                        : event.action === 'disabled'
+                                                                            ? 'bg-zinc-500/15 text-zinc-300 border border-zinc-500/25'
+                                                                            : event.action === 'probe'
+                                                                                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/25'
+                                                                                : 'bg-bg-item-surface text-text-tertiary border border-border-subtle'
+                                                                        }`}>
+                                                                        {event.action}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-[11px] text-text-secondary mt-1 leading-relaxed">
+                                                                    {event.description}
+                                                                </p>
+                                                            </div>
+                                                            <span className="shrink-0 text-[11px] text-text-tertiary tabular-nums">
+                                                                {new Date(event.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                            </span>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 

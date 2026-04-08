@@ -4,6 +4,7 @@ import { AppState } from "./main"
 import { KeybindManager } from "./services/KeybindManager"
 import { PersistedWindowBounds, SettingsManager } from "./services/SettingsManager"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 
 const isEnvDev = process.env.NODE_ENV === "development"
 const isPackaged = app.isPackaged;
@@ -16,7 +17,25 @@ const isDev = isEnvDev && !isPackaged;
 
 const startUrl = isDev
   ? "http://localhost:5180"
-  : `file://${path.join(__dirname, "../../dist/index.html")}`
+  : pathToFileURL(path.join(__dirname, "../../dist/index.html")).toString()
+
+const getDefaultWindowIconPath = (): string => {
+  if (process.platform === "darwin") {
+    return app.isPackaged
+      ? path.join(process.resourcesPath, "icon.icns")
+      : path.resolve(__dirname, "../../assets/icons/mac/icon.icns");
+  }
+
+  if (process.platform === "win32") {
+    return app.isPackaged
+      ? path.join(process.resourcesPath, "assets/icons/win/icon1.ico")
+      : path.resolve(__dirname, "../../assets/icons/win/icon1.ico");
+  }
+
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "assets/icons/png/icon_512x512.png")
+    : path.resolve(__dirname, "../../assets/icons/png/icon_512x512.png");
+};
 
 export class WindowHelper {
   private launcherWindow: BrowserWindow | null = null
@@ -248,19 +267,7 @@ export class WindowHelper {
         const mode = this.appState.getDisguise();
 
         if (mode === 'none') {
-          if (isMac) {
-            return app.isPackaged
-              ? path.join(process.resourcesPath, "natively.icns")
-              : path.resolve(__dirname, "../../assets/natively.icns");
-          } else if (isWin) {
-            return app.isPackaged
-              ? path.join(process.resourcesPath, "assets/icons/win/icon.ico")
-              : path.resolve(__dirname, "../../assets/icons/win/icon.ico");
-          } else {
-            return app.isPackaged
-              ? path.join(process.resourcesPath, "icon.png")
-              : path.resolve(__dirname, "../../assets/icon.png");
-          }
+          return getDefaultWindowIconPath();
         }
 
         // Disguise mode icons

@@ -22,7 +22,9 @@ interface FeatureSlide {
 
 const SUPPORT_URL = hasConfiguredLink(BRAND.supportUrl)
     ? BRAND.supportUrl
-    : BRAND.repositoryUrl;
+    : hasConfiguredLink(BRAND.websiteUrl)
+        ? BRAND.websiteUrl
+        : BRAND.repositoryUrl;
 
 const FEATURES: FeatureSlide[] = [
     {
@@ -36,7 +38,11 @@ const FEATURES: FeatureSlide[] = [
 
     {
         id: 'support_natively',
-        headline: hasConfiguredLink(BRAND.supportUrl) ? 'Support development' : 'Project visibility',
+        headline: hasConfiguredLink(BRAND.supportUrl)
+            ? 'Support development'
+            : hasConfiguredLink(BRAND.websiteUrl)
+                ? 'Visit portfolio'
+                : 'Project visibility',
         subtitle: `Built independently by ${BRAND.ownerName}`,
         bullets: [
             'Cleaner branding and release ownership',
@@ -44,7 +50,11 @@ const FEATURES: FeatureSlide[] = [
 
         ],
         type: 'support',
-        actionLabel: hasConfiguredLink(BRAND.supportUrl) ? 'Support the project' : 'Open repository',
+        actionLabel: hasConfiguredLink(BRAND.supportUrl)
+            ? 'Support the project'
+            : hasConfiguredLink(BRAND.websiteUrl)
+                ? 'Open portfolio'
+                : 'Open repository',
         url: SUPPORT_URL
     }
 ];

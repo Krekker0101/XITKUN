@@ -1,3 +1,5 @@
+import { AIServiceDraft, AIServiceSummary } from '../lib/aiServiceCatalog';
+
 export interface ElectronAPI {
   updateContentDimensions: (dimensions: {
     width: number
@@ -70,7 +72,7 @@ export interface ElectronAPI {
   closeAdvancedSettings: () => Promise<void>
 
   // LLM Model Management
-  getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini"; model: string; isOllama: boolean }>
+  getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini" | "custom" | "service"; model: string; isOllama: boolean }>
   getAvailableOllamaModels: () => Promise<string[]>
   switchToOllama: (model?: string, url?: string) => Promise<{ success: boolean; error?: string }>
   switchToGemini: (apiKey?: string, modelId?: string) => Promise<{ success: boolean; error?: string }>
@@ -193,6 +195,11 @@ export interface ElectronAPI {
   saveCustomProvider: (provider: any) => Promise<{ success: boolean; id?: string; error?: string }>;
   getCustomProviders: () => Promise<any[]>;
   deleteCustomProvider: (id: string) => Promise<{ success: boolean; error?: string }>;
+  getAiServices: () => Promise<AIServiceSummary[]>;
+  saveAiService: (service: AIServiceDraft) => Promise<{ success: boolean; id?: string; error?: string }>;
+  deleteAiService: (id: string) => Promise<{ success: boolean; error?: string }>;
+  testAiService: (service: Partial<AIServiceDraft> & { id?: string }) => Promise<{ success: boolean; error?: string }>;
+  fetchAiServiceModels: (service: Partial<AIServiceDraft> & { id?: string }) => Promise<{ success: boolean; models?: { id: string; label: string }[]; error?: string }>;
 
   // Follow-up Email
   generateFollowupEmail: (input: any) => Promise<string>;

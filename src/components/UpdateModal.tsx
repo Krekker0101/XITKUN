@@ -171,7 +171,7 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
                                         </p>
                                     )}
                                     <p className="text-[13px] text-white/40">
-                                        Check your internet connection or download the update manually from GitHub.
+                                        Check your internet connection or download the update manually from the official website.
                                     </p>
                                 </div>
                                 <button

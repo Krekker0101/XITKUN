@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import appIcon from './icon.png';
+import appIcon from '../assets/appIcon';
 
 interface StartupSequenceProps {
     onComplete: () => void;

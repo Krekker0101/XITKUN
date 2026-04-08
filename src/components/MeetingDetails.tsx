@@ -4,7 +4,7 @@ import { ArrowLeft, Search, Mail, Link, ChevronDown, Play, ArrowUp, Copy, Check,
 import { motion, AnimatePresence } from 'framer-motion';
 import MeetingChatOverlay from './MeetingChatOverlay';
 import EditableTextBlock from './EditableTextBlock';
-import NativelyLogo from './icon.png';
+import NativelyLogo from '../assets/appIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';

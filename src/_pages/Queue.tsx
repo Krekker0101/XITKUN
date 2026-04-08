@@ -10,6 +10,9 @@ import {
 } from "../components/ui/toast"
 import QueueCommands from "../components/Queue/QueueCommands"
 import { ModelSelector } from "../components/ui/ModelSelector"
+import { formatRuntimeModelLabel } from "../lib/aiModelPresentation";
+import { CustomProviderSummary } from "../lib/aiModelPresentation";
+import { AIServiceSummary } from "../lib/aiServiceCatalog";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -41,7 +44,9 @@ const Queue: React.FC<QueueProps> = ({ setView }) => {
   const chatInputRef = useRef<HTMLInputElement>(null)
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [currentModel, setCurrentModel] = useState<string>('gemini-3.1-flash-lite-preview')
+  const [currentModel, setCurrentModel] = useState<string>('')
+  const [modelAiServices, setModelAiServices] = useState<AIServiceSummary[]>([])
+  const [modelCustomProviders, setModelCustomProviders] = useState<CustomProviderSummary[]>([])
 
   const barRef = useRef<HTMLDivElement>(null)
 
@@ -175,6 +180,14 @@ const Queue: React.FC<QueueProps> = ({ setView }) => {
       }
     };
     loadDefaultModel();
+
+    void Promise.all([
+      window.electronAPI.getAiServices(),
+      window.electronAPI.getCustomProviders() as Promise<CustomProviderSummary[]>,
+    ]).then(([services, customProviders]) => {
+      setModelAiServices((services || []) as AIServiceSummary[]);
+      setModelCustomProviders(customProviders || []);
+    }).catch(() => {});
   }, []);
 
   // Listen for default model changes from Settings
@@ -349,7 +362,7 @@ const Queue: React.FC<QueueProps> = ({ setView }) => {
               <div className="flex-1 overflow-y-auto mb-3 p-3 rounded-lg bg-white/10 backdrop-blur-md max-h-64 min-h-[120px] glass-content border border-white/20 shadow-lg">
                 {chatMessages.length === 0 ? (
                   <div className="text-sm text-gray-600 text-center mt-8">
-                    💬 Chat with {currentModel}
+                    💬 Chat with {formatRuntimeModelLabel(currentModel, modelAiServices, modelCustomProviders)}
                     <br />
                     <span className="text-xs text-gray-500">Take a screenshot (Cmd+H) for automatic analysis</span>
                     <br />
@@ -430,7 +443,7 @@ const Queue: React.FC<QueueProps> = ({ setView }) => {
                         <span className="animate-pulse text-gray-400">●</span>
                         <span className="animate-pulse animation-delay-200 text-gray-400">●</span>
                         <span className="animate-pulse animation-delay-400 text-gray-400">●</span>
-                        <span className="ml-2">{currentModel} is replying...</span>
+                        <span className="ml-2">{formatRuntimeModelLabel(currentModel, modelAiServices, modelCustomProviders)} is replying...</span>
                       </span>
                     </div>
                   </div>

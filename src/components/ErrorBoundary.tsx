@@ -55,9 +55,11 @@ export class ErrorBoundary extends Component<Props, State> {
                 context,
                 message: error?.message,
                 stack: error?.stack,
-                componentStack: info.componentStack
+                componentStack: info.componentStack ?? undefined
             });
-        } catch { /* analytics must never crash the handler */ }
+        } catch {
+            // analytics must never crash the handler
+        }
     }
 
     private handleReload = (): void => {
@@ -98,7 +100,7 @@ export class ErrorBoundary extends Component<Props, State> {
                     {context} crashed
                 </h2>
                 <p style={{ margin: 0, fontSize: '12px', color: '#888', maxWidth: '320px', lineHeight: 1.5 }}>
-                    An unexpected error occurred. Your data is safe — click below to recover.
+                    An unexpected error occurred. Your data is safe - click below to recover.
                 </p>
                 {this.state.errorMessage && (
                     <code style={{

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useStreamBuffer } from '../hooks/useStreamBuffer';
 import { X, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import nativelyIcon from './icon.png';
+import nativelyIcon from '../assets/appIcon';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';

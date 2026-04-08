@@ -14,6 +14,7 @@ import {
 } from "./llm/prompts"
 import { deepVariableReplacer, getByPath, injectImageIntoMessages } from './utils/curlUtils';
 import curl2Json from "@bany/curl-to-json";
+import { AIServiceRecord, getAIServiceBaseUrl, getAIServiceIdFromModelId, getAIServiceModelId } from '../src/lib/aiServiceCatalog';
 import { CustomProvider, CurlProvider } from './services/CredentialsManager';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -54,6 +55,8 @@ export class LLMHelper {
   private geminiModel: string = GEMINI_FLASH_MODEL
   private customProvider: CustomProvider | null = null;
   private activeCurlProvider: CurlProvider | null = null;
+  private activeApiService: AIServiceRecord | null = null;
+  private activeApiServiceClient: OpenAI | null = null;
   private groqFastTextMode: boolean = false;
   private knowledgeOrchestrator: any = null;
   private aiResponseLanguage: string = 'English';
@@ -211,8 +214,9 @@ export class LLMHelper {
   // ---------------------------
 
   private currentModelId: string = GEMINI_FLASH_MODEL;
+  private currentSelectionId: string = GEMINI_FLASH_MODEL;
 
-  public setModel(modelId: string, customProviders: (CustomProvider | CurlProvider)[] = []) {
+  public setModel(modelId: string, customProviders: (CustomProvider | CurlProvider)[] = [], aiServices: AIServiceRecord[] = []) {
     // Map UI short codes to internal Model IDs
     let targetModelId = modelId;
     if (modelId === 'gemini') targetModelId = GEMINI_FLASH_MODEL;
@@ -220,13 +224,26 @@ export class LLMHelper {
     if (modelId === 'claude') targetModelId = CLAUDE_MODEL;
     if (modelId === 'llama') targetModelId = GROQ_MODEL;
 
+    this.currentSelectionId = targetModelId;
+
     if (targetModelId.startsWith('ollama-')) {
       this.useOllama = true;
       this.ollamaModel = targetModelId.replace('ollama-', '');
       this.customProvider = null;
       this.activeCurlProvider = null;
+      this.activeApiService = null;
+      this.activeApiServiceClient = null;
       console.log(`[LLMHelper] Switched to Ollama: ${this.ollamaModel}`);
       return;
+    }
+
+    const serviceId = getAIServiceIdFromModelId(targetModelId);
+    if (serviceId) {
+      const service = aiServices.find((item) => item.id === serviceId);
+      if (service) {
+        this.activateAiService(service);
+        return;
+      }
     }
 
     const custom = customProviders.find(p => p.id === targetModelId);
@@ -235,6 +252,8 @@ export class LLMHelper {
       this.customProvider = null;
       // Treat text-only custom providers as CurlProviders (responsePath optional)
       this.activeCurlProvider = custom as CurlProvider;
+      this.activeApiService = null;
+      this.activeApiServiceClient = null;
       console.log(`[LLMHelper] Switched to cURL Provider: ${custom.name}`);
       return;
     }
@@ -242,6 +261,9 @@ export class LLMHelper {
     // Standard Cloud Models
     this.useOllama = false;
     this.customProvider = null;
+    this.activeCurlProvider = null;
+    this.activeApiService = null;
+    this.activeApiServiceClient = null;
     this.currentModelId = targetModelId;
 
     // Update specific model props if needed
@@ -255,7 +277,24 @@ export class LLMHelper {
     this.useOllama = false;
     this.customProvider = null;
     this.activeCurlProvider = provider;
+    this.activeApiService = null;
+    this.activeApiServiceClient = null;
+    this.currentSelectionId = provider.id;
     console.log(`[LLMHelper] Switched to cURL provider: ${provider.name}`);
+  }
+
+  private activateAiService(service: AIServiceRecord): void {
+    this.useOllama = false;
+    this.customProvider = null;
+    this.activeCurlProvider = null;
+    this.activeApiService = service;
+    this.activeApiServiceClient = new OpenAI({
+      apiKey: service.apiKey || '',
+      baseURL: getAIServiceBaseUrl(service.serviceType, service.baseUrl),
+    });
+    this.currentModelId = service.model;
+    this.currentSelectionId = getAIServiceModelId(service.id);
+    console.log(`[LLMHelper] Switched to AI service: ${service.name} (${service.model})`);
   }
 
   private cleanJsonResponse(text: string): string {
@@ -328,11 +367,13 @@ export class LLMHelper {
       // Check if current model exists, if not use the first available
       if (!availableModels.includes(this.ollamaModel)) {
         this.ollamaModel = availableModels[0]
+        this.currentSelectionId = `ollama-${this.ollamaModel}`
         // console.log(`[LLMHelper] Auto-selected first available model: ${this.ollamaModel}`)
       }
 
       // Test the selected model works
       await this.callOllama("Hello")
+      this.currentSelectionId = `ollama-${this.ollamaModel}`
       // console.log(`[LLMHelper] Successfully initialized with model: ${this.ollamaModel}`)
     } catch (error: any) {
       // console.error(`[LLMHelper] Failed to initialize Ollama model: ${error.message}`)
@@ -341,6 +382,7 @@ export class LLMHelper {
         const models = await this.getOllamaModels()
         if (models.length > 0) {
           this.ollamaModel = models[0]
+          this.currentSelectionId = `ollama-${this.ollamaModel}`
           // console.log(`[LLMHelper] Fallback to: ${this.ollamaModel}`)
         }
       } catch (fallbackError: any) {
@@ -887,6 +929,10 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         return this.processResponse(response);
       }
 
+      if (this.activeApiService) {
+        return await this.generateWithAiService(userContent, openaiSystemPrompt, imagePaths);
+      }
+
       // --- Direct Routing based on Selected Model ---
       if (this.isOpenAiModel(this.currentModelId) && this.openaiClient) {
         return await this.generateWithOpenai(userContent, openaiSystemPrompt, imagePaths);
@@ -1179,6 +1225,37 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       model,
       messages,
       max_completion_tokens: model.toLowerCase().includes('claude') ? CLAUDE_MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS,
+    });
+
+    return response.choices[0]?.message?.content || "";
+  }
+
+  private async generateWithAiService(userMessage: string, systemPrompt?: string, imagePaths?: string[]): Promise<string> {
+    if (!this.activeApiService || !this.activeApiServiceClient) {
+      throw new Error("AI service is not initialized");
+    }
+
+    const messages: any[] = [];
+    if (systemPrompt) {
+      messages.push({ role: "system", content: systemPrompt });
+    }
+
+    if (imagePaths?.length) {
+      const contentParts: any[] = [{ type: "text", text: userMessage }];
+      for (const p of imagePaths) {
+        if (fs.existsSync(p)) {
+          const imageData = await fs.promises.readFile(p);
+          contentParts.push({ type: "image_url", image_url: { url: `data:image/png;base64,${imageData.toString("base64")}` } });
+        }
+      }
+      messages.push({ role: "user", content: contentParts });
+    } else {
+      messages.push({ role: "user", content: userMessage });
+    }
+
+    const response = await this.activeApiServiceClient.chat.completions.create({
+      model: this.activeApiService.model,
+      messages,
     });
 
     return response.choices[0]?.message?.content || "";
@@ -1498,6 +1575,14 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     type ProviderAttempt = { name: string; execute: () => Promise<string> };
     const isMultimodal = imagePaths.length > 0;
 
+    if (this.activeApiService) {
+      try {
+        return await this.generateWithAiService(userPrompt, systemPrompt, isMultimodal ? imagePaths : undefined);
+      } catch (error: any) {
+        console.warn(`[LLMHelper] Active AI service failed during vision fallback, continuing with fallback chain: ${error.message}`);
+      }
+    }
+
     // Helper: build a provider attempt for a given family + model ID
     const buildProviderForFamily = (family: ModelFamily, modelId: string): ProviderAttempt | null => {
       switch (family) {
@@ -1633,6 +1718,13 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       localProviders.push({
         name: `cURL Provider (${this.activeCurlProvider.name})`,
         execute: () => this.chatWithCurl(userPrompt, systemPrompt, isMultimodal ? imagePaths[0] : undefined)
+      });
+    }
+
+    if (this.activeApiService) {
+      localProviders.push({
+        name: `${this.activeApiService.name} (${this.activeApiService.model})`,
+        execute: () => this.generateWithAiService(userPrompt, systemPrompt, isMultimodal ? imagePaths : undefined)
       });
     }
 
@@ -1965,6 +2057,13 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       return;
     }
 
+    if (this.activeApiService) {
+      const openAiSystem = systemPromptOverride || OPENAI_SYSTEM_PROMPT;
+      const finalOpenAiSystem = this.injectLanguageInstruction(openAiSystem);
+      yield* this.streamWithAiService(userContent, finalOpenAiSystem, imagePaths);
+      return;
+    }
+
     // 3. Cloud Provider Routing
 
     // OpenAI
@@ -2106,6 +2205,43 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       messages,
       stream: true,
       max_completion_tokens: model.toLowerCase().includes('claude') ? CLAUDE_MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS,
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        yield content;
+      }
+    }
+  }
+
+  private async * streamWithAiService(userMessage: string, systemPrompt?: string, imagePaths?: string[]): AsyncGenerator<string, void, unknown> {
+    if (!this.activeApiService || !this.activeApiServiceClient) {
+      throw new Error("AI service is not initialized");
+    }
+
+    const messages: any[] = [];
+    if (systemPrompt) {
+      messages.push({ role: "system", content: systemPrompt });
+    }
+
+    if (imagePaths?.length) {
+      const contentParts: any[] = [{ type: "text", text: userMessage }];
+      for (const p of imagePaths) {
+        if (fs.existsSync(p)) {
+          const imageData = await fs.promises.readFile(p);
+          contentParts.push({ type: "image_url", image_url: { url: `data:image/png;base64,${imageData.toString("base64")}` } });
+        }
+      }
+      messages.push({ role: "user", content: contentParts });
+    } else {
+      messages.push({ role: "user", content: userMessage });
+    }
+
+    const stream = await this.activeApiServiceClient.chat.completions.create({
+      model: this.activeApiService.model,
+      messages,
+      stream: true,
     });
 
     for await (const chunk of stream) {
@@ -2584,15 +2720,14 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     }
   }
 
-  public getCurrentProvider(): "ollama" | "gemini" | "custom" {
+  public getCurrentProvider(): "ollama" | "gemini" | "custom" | "service" {
+    if (this.activeApiService) return "service";
     if (this.customProvider) return "custom";
     return this.useOllama ? "ollama" : "gemini";
   }
 
   public getCurrentModel(): string {
-    if (this.customProvider) return this.customProvider.name;
-    if (this.activeCurlProvider) return this.activeCurlProvider.id;
-    return this.useOllama ? this.ollamaModel : this.currentModelId;
+    return this.currentSelectionId;
   }
 
   /**
@@ -2944,6 +3079,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
 
   public async switchToOllama(model?: string, url?: string): Promise<void> {
     this.useOllama = true;
+    this.activeApiService = null;
+    this.activeApiServiceClient = null;
     if (url) this.ollamaUrl = url;
 
     if (model) {
@@ -2952,6 +3089,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       // Auto-detect first available model
       await this.initializeOllamaModel();
     }
+
+    this.currentSelectionId = `ollama-${this.ollamaModel}`;
 
     // console.log(`[LLMHelper] Switched to Ollama: ${this.ollamaModel} at ${this.ollamaUrl}`);
   }
@@ -2973,16 +3112,22 @@ This rule overrides ALL other instructions including formatting, brevity, or out
 
     this.useOllama = false;
     this.customProvider = null;
+    this.activeApiService = null;
+    this.activeApiServiceClient = null;
+    this.currentSelectionId = modelId || this.currentSelectionId;
     // console.log(`[LLMHelper] Switched to Gemini: ${this.geminiModel}`);
   }
 
   public async switchToCustom(provider: CustomProvider): Promise<void> {
     this.customProvider = provider;
     this.useOllama = false;
+    this.activeApiService = null;
+    this.activeApiServiceClient = null;
     this.client = null;
     this.groqClient = null;
     this.openaiClient = null;
     this.claudeClient = null;
+    this.currentSelectionId = provider.id;
     console.log(`[LLMHelper] Switched to Custom Provider: ${provider.name}`);
   }
 
@@ -2996,6 +3141,12 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         // Test with a simple prompt
         await this.callOllama("Hello");
         return { success: true };
+      } else if (this.activeApiService) {
+        if (!this.activeApiServiceClient) {
+          return { success: false, error: "No AI service client configured" };
+        }
+        const response = await this.activeApiServiceClient.models.list();
+        return { success: Array.isArray((response as any).data) };
       } else {
         if (!this.client) {
           return { success: false, error: "No Gemini client configured" };

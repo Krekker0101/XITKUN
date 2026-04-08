@@ -62,6 +62,12 @@ declare global {
 /** Detect if a model is running locally (Ollama) or in the cloud */
 export function detectProviderType(modelName: string): ModelProviderType {
     const lower = modelName.toLowerCase();
+    if (lower.startsWith('service:')) {
+        return 'cloud';
+    }
+    if (lower.startsWith('ollama-')) {
+        return 'local';
+    }
     // Ollama / local model patterns
     if (
         lower.startsWith('ollama:') ||

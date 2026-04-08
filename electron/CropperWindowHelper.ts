@@ -1,11 +1,12 @@
 import { BrowserWindow, screen, app, ipcMain, IpcMainEvent } from "electron"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 
 const isDev = process.env.NODE_ENV === "development"
 
 const startUrl = isDev
     ? "http://localhost:5180"
-    : `file://${path.join(app.getAppPath(), "dist/index.html")}`
+    : pathToFileURL(path.join(app.getAppPath(), "dist/index.html")).toString()
 
 /**
  * CropperWindowHelper configuration constants.

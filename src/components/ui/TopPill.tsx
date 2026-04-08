@@ -1,5 +1,5 @@
 import { ChevronUp, ChevronDown, PointerOff } from "lucide-react";
-import icon from "../icon.png";
+import icon from "../../assets/appIcon";
 import type { OverlayAppearance } from "../../lib/overlayAppearance";
 import { BRAND } from "../../config/brand";
 

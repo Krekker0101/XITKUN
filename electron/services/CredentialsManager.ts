@@ -6,6 +6,14 @@
 import { app, safeStorage } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import {
+    AIServiceDraft,
+    AIServiceRecord,
+    AIServiceSummary,
+    AIServiceType,
+    getAIServiceBaseUrl,
+    getAIServiceModelId,
+} from '../../src/lib/aiServiceCatalog';
 
 const CREDENTIALS_PATH = path.join(app.getPath('userData'), 'credentials.enc');
 
@@ -30,6 +38,7 @@ export interface StoredCredentials {
     googleServiceAccountPath?: string;
     customProviders?: CustomProvider[];
     curlProviders?: CurlProvider[];
+    aiServices?: AIServiceRecord[];
     defaultModel?: string;
     // STT Provider settings
     sttProvider?: 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox';
@@ -75,6 +84,7 @@ export class CredentialsManager {
      */
     public init(): void {
         this.loadCredentials();
+        this.migrateLegacyAiServices();
         console.log('[CredentialsManager] Initialized');
     }
 
@@ -104,6 +114,25 @@ export class CredentialsManager {
 
     public getCustomProviders(): CustomProvider[] {
         return this.credentials.customProviders || [];
+    }
+
+    public getAiServices(): AIServiceRecord[] {
+        return this.credentials.aiServices || [];
+    }
+
+    public getAiServiceById(id: string): AIServiceRecord | undefined {
+        return this.getAiServices().find((service) => service.id === id);
+    }
+
+    public getAiServiceSummaries(): AIServiceSummary[] {
+        return this.getAiServices().map((service) => ({
+            id: service.id,
+            name: service.name,
+            serviceType: service.serviceType,
+            model: service.model,
+            hasApiKey: !!service.apiKey?.trim(),
+            baseUrl: service.baseUrl,
+        }));
     }
 
     public getSttProvider(): 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' {
@@ -162,6 +191,9 @@ export class CredentialsManager {
         return this.credentials.aiResponseLanguage || 'English';
     }
     public getDefaultModel(): string {
+        if (!this.credentials.defaultModel && this.getAiServices().length > 0) {
+            return getAIServiceModelId(this.getAiServices()[0].id);
+        }
         return this.credentials.defaultModel || 'gemini-3.1-flash-lite-preview';
     }
 
@@ -303,6 +335,43 @@ export class CredentialsManager {
         (this.credentials as any)[key] = modelId;
         this.saveCredentials();
         console.log(`[CredentialsManager] ${provider} preferred model set to: ${modelId}`);
+    }
+
+    public saveAiService(service: AIServiceDraft): AIServiceRecord {
+        if (!this.credentials.aiServices) {
+            this.credentials.aiServices = [];
+        }
+
+        const trimmedId = service.id?.trim();
+        const id = trimmedId || `svc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const existing = this.credentials.aiServices.find((item) => item.id === id);
+
+        const nextService: AIServiceRecord = {
+            id,
+            name: service.name.trim(),
+            serviceType: service.serviceType,
+            model: service.model.trim(),
+            baseUrl: getAIServiceBaseUrl(service.serviceType, service.baseUrl),
+            apiKey: service.apiKey?.trim() || existing?.apiKey || '',
+        };
+
+        const index = this.credentials.aiServices.findIndex((item) => item.id === id);
+        if (index >= 0) {
+            this.credentials.aiServices[index] = nextService;
+        } else {
+            this.credentials.aiServices.push(nextService);
+        }
+
+        this.saveCredentials();
+        console.log(`[CredentialsManager] AI Service '${nextService.name}' saved`);
+        return nextService;
+    }
+
+    public deleteAiService(id: string): void {
+        if (!this.credentials.aiServices) return;
+        this.credentials.aiServices = this.credentials.aiServices.filter((service) => service.id !== id);
+        this.saveCredentials();
+        console.log(`[CredentialsManager] AI Service '${id}' deleted`);
     }
 
     public saveCustomProvider(provider: CustomProvider): void {
@@ -466,6 +535,38 @@ export class CredentialsManager {
         } catch (error) {
             console.error('[CredentialsManager] Failed to load credentials:', error);
             this.credentials = {};
+        }
+    }
+
+    private migrateLegacyAiServices(): void {
+        const existingServices = this.credentials.aiServices || [];
+        if (existingServices.length > 0) {
+            return;
+        }
+
+        const openaiKey = this.credentials.openaiApiKey?.trim();
+        if (!openaiKey) {
+            return;
+        }
+
+        const legacyModel = this.credentials.openaiPreferredModel?.trim()
+            || (this.credentials.defaultModel?.trim().startsWith('gpt-')
+                ? this.credentials.defaultModel.trim()
+                : 'gpt-4o-mini');
+
+        const migrated = this.saveAiService({
+            id: 'legacy-openai',
+            name: 'ChatGPT',
+            serviceType: 'openai',
+            model: legacyModel,
+            apiKey: openaiKey,
+            baseUrl: getAIServiceBaseUrl('openai'),
+        });
+
+        const defaultModel = this.credentials.defaultModel?.trim() || '';
+        if (!defaultModel || defaultModel.startsWith('gpt-')) {
+            this.credentials.defaultModel = getAIServiceModelId(migrated.id);
+            this.saveCredentials();
         }
     }
 }
