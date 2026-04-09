@@ -18,20 +18,20 @@
 <br/>
 
 <p align="center">
-  <a href="https://github.com/Krekker0101/NATE-1/stargazers">
-    <img src="https://img.shields.io/github/stars/Krekker0101/NATE-1?style=for-the-badge&logo=github&label=STARS&labelColor=0f172a&color=38bdf8&logoColor=white" />
+  <a href="https://github.com/Krekker0101/XITKUN/stargazers">
+    <img src="https://img.shields.io/github/stars/Krekker0101/XITKUN?style=for-the-badge&logo=github&label=STARS&labelColor=0f172a&color=38bdf8&logoColor=white" />
   </a>
   &nbsp;
-  <a href="https://github.com/Krekker0101/NATE-1/releases">
-    <img src="https://img.shields.io/github/v/release/Krekker0101/NATE-1?include_prereleases&style=for-the-badge&label=VERSION&labelColor=0f172a&color=818cf8" />
+  <a href="https://github.com/Krekker0101/XITKUN/releases">
+    <img src="https://img.shields.io/github/v/release/Krekker0101/XITKUN?include_prereleases&style=for-the-badge&label=VERSION&labelColor=0f172a&color=818cf8" />
   </a>
   &nbsp;
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/LICENSE-AGPL%20v3--only-0f172a?style=for-the-badge&logo=gnuprivacyguard&logoColor=white&labelColor=0f172a&color=c084fc" />
   </a>
   &nbsp;
-  <a href="https://github.com/Krekker0101/NATE-1/commits/main">
-    <img src="https://img.shields.io/github/last-commit/Krekker0101/NATE-1?style=for-the-badge&label=LAST%20COMMIT&labelColor=0f172a&color=34d399" />
+  <a href="https://github.com/Krekker0101/XITKUN/commits/main">
+    <img src="https://img.shields.io/github/last-commit/Krekker0101/XITKUN?style=for-the-badge&label=LAST%20COMMIT&labelColor=0f172a&color=34d399" />
   </a>
 </p>
 
@@ -231,10 +231,10 @@
 ## 📈 PROJECT PULSE
 
 <p align="center">
-  <a href="https://star-history.com/#Krekker0101/NATE-1&Date">
+  <a href="https://star-history.com/#Krekker0101/XITKUN&Date">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Krekker0101/NATE-1&type=Date&theme=dark" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Krekker0101/NATE-1&type=Date" width="90%" style="border-radius: 16px;" />
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Krekker0101/XITKUN&type=Date&theme=dark" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Krekker0101/XITKUN&type=Date" width="90%" style="border-radius: 16px;" />
     </picture>
   </a>
 </p>
@@ -262,7 +262,7 @@
 
 ```bash
 # 1. Clone & enter
-git clone https://github.com/Krekker0101/NATE-1.git && cd NATE-1
+git clone https://github.com/Krekker0101/XITKUN.git && cd XITKUN
 
 # 2. Install dependencies
 npm install
@@ -307,7 +307,7 @@ git commit -m 'Add some amazing feature'
 git push origin feature/amazing-feature
 # Open a Pull Request
 ```
-> 📋 See [GitHub Issues](https://github.com/Krekker0101/NATE-1/issues) for current tasks and ideas.
+> 📋 See [GitHub Issues](https://github.com/Krekker0101/XITKUN/issues) for current tasks and ideas.
 
   
 
@@ -335,7 +335,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ## 🔗 LINKS
 
-<p align="center"> <a href="https://github.com/Krekker0101/NATE-1"> <img src="https://img.shields.io/badge/GitHub-Repository-0f172a?style=for-the-badge&logo=github&logoColor=white&labelColor=1e293b" /> </a> &nbsp; <a href="https://github.com/Krekker0101/NATE-1/releases"> <img src="https://img.shields.io/badge/Releases-Download-0f172a?style=for-the-badge&logo=github&logoColor=white&labelColor=1e293b" /> </a> &nbsp; <a href="https://tajik-develop.yzz.me"> <img src="https://img.shields.io/badge/Portfolio-tajik--develop.yzz.me-0f172a?style=for-the-badge&logo=firefoxbrowser&logoColor=white&labelColor=1e293b" /> </a> &nbsp; <a href="https://github.com/Krekker0101/NATE-1/issues"> <img src="https://img.shields.io/badge/Issues-Report%20Bug-0f172a?style=for-the-badge&logo=github&logoColor=white&labelColor=1e293b" /> </a> </p>  
+<p align="center"> <a href="https://github.com/Krekker0101/XITKUN"> <img src="https://img.shields.io/badge/GitHub-Repository-0f172a?style=for-the-badge&logo=github&logoColor=white&labelColor=1e293b" /> </a> &nbsp; <a href="https://github.com/Krekker0101/XITKUN/releases"> <img src="https://img.shields.io/badge/Releases-Download-0f172a?style=for-the-badge&logo=github&logoColor=white&labelColor=1e293b" /> </a> &nbsp; <a href="https://tajik-develop.yzz.me"> <img src="https://img.shields.io/badge/Portfolio-tajik--develop.yzz.me-0f172a?style=for-the-badge&logo=firefoxbrowser&logoColor=white&labelColor=1e293b" /> </a> &nbsp; <a href="https://github.com/Krekker0101/XITKUN/issues"> <img src="https://img.shields.io/badge/Issues-Report%20Bug-0f172a?style=for-the-badge&logo=github&logoColor=white&labelColor=1e293b" /> </a> </p>  
 <p align="center"> <img src="assets/readme/xitkun-journey.svg" alt="XITKUN journey" width="95%" style="border-radius: 16px;" /> </p><p align="center"> <br/> <span style="color: #38bdf8;">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> <br/><br/> <sub style="color: #64748b; letter-spacing: 2px;"> BUILT WITH FOCUS · SHIPPED WITH CARE · FOR PEOPLE WHO LIVE ON THEIR DESKTOP </sub> <br/><br/> <span style="color: #38bdf8;">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span> </p> ```
 
 
